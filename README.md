@@ -99,6 +99,10 @@ The protocol details come from the Eleph implementation in [TiMini-Print](https:
 | `ble_thermal_printer/config.py` | Saved settings (last printer, calibration) |
 | `tools/probe.py` | Raw BLE discovery and protocol probe |
 
+## License
+
+[MIT](LICENSE)
+
 ## Disclaimer
 
 This is an unofficial project, not affiliated with MPIA or the Eleph-label app.
