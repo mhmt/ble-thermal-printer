@@ -1,0 +1,844 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Label Printer</title>
+<style>
+  :root {
+    --bg: #f4f4f2; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e2dd;
+    --accent: #1f6feb; --accent-text: #fff; --ok: #1a7f37; --err: #cf222e; --warn: #9a6700;
+    --input: #fafaf8; --paper: #ffffff; --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --panel: #1f1f1d; --text: #ececea; --muted: #9b9b95; --line: #33332f;
+      --accent: #4c8dff; --accent-text: #0b0b0a; --ok: #3fb950; --err: #f85149; --warn: #d29922;
+      --input: #262624; --paper: #f7f7f3; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+           padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 999px;
+          border: 1px solid var(--line); font-size: 12.5px; color: var(--muted); cursor: pointer; background: var(--input); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--ok); } .dot.err { background: var(--err); } .dot.busy { background: var(--warn); }
+  main { display: grid; grid-template-columns: minmax(300px, 400px) 1fr; gap: 20px; padding: 20px;
+         max-width: 1200px; margin: 0 auto; }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; padding: 16px; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; box-shadow: var(--shadow); }
+  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: var(--input);
+          border: 1px solid var(--line); border-radius: 10px; padding: 3px; margin-bottom: 16px; }
+  .tabs button { border: 0; background: transparent; color: var(--muted); padding: 7px 0; border-radius: 7px;
+                 font: inherit; font-weight: 550; cursor: pointer; }
+  .tabs button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  label.f { display: block; margin-bottom: 12px; }
+  label.f > span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 550; }
+  input[type=text], input[type=number], textarea, select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--input); color: var(--text); font: inherit; }
+  textarea { min-height: 84px; resize: vertical; }
+  input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 14px; margin: 4px 0 12px; }
+  .checks label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
+  .hidden { display: none !important; }
+  .preview-wrap { display: flex; flex-direction: column; gap: 16px; }
+  .stage { display: grid; place-items: center; min-height: 260px; padding: 28px; border-radius: 12px;
+           background: repeating-linear-gradient(45deg, transparent 0 10px, rgba(127,127,127,.06) 10px 20px), var(--panel);
+           border: 1px solid var(--line); overflow: auto; }
+  .stage img { image-rendering: pixelated; background: var(--paper); border-radius: 6px;
+               box-shadow: 0 0 0 1px rgba(0,0,0,.15), 0 6px 20px rgba(0,0,0,.12); max-width: 100%; }
+  .meta { color: var(--muted); font-size: 12.5px; text-align: center; }
+  .pv { position: relative; display: inline-block; line-height: 0; max-width: 100%; }
+  .pv img { display: block; }
+  .guide { position: absolute; pointer-events: none; border: 1.5px dashed var(--accent); border-radius: 2px; opacity: .75; }
+  .guide.hidden { display: none; }
+  .band { position: absolute; left: 0; right: 0; pointer-events: none;
+          background: repeating-linear-gradient(135deg, rgba(207,34,46,.28) 0 4px, rgba(207,34,46,.08) 4px 8px); }
+  .band.top { top: 0; border-bottom: 1px solid rgba(207,34,46,.6); border-radius: 6px 6px 0 0; }
+  .band.bottom { bottom: 0; border-top: 1px solid rgba(207,34,46,.6); border-radius: 0 0 6px 6px; }
+  .band.hidden { display: none; }
+  .legend .hatch { width: 14px; height: 9px; border: 0; opacity: 1; border-radius: 2px;
+                   background: repeating-linear-gradient(135deg, rgba(207,34,46,.55) 0 3px, rgba(207,34,46,.15) 3px 6px); }
+  .hbtn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 8px; cursor: pointer;
+          border: 1px solid var(--line); background: var(--input); color: var(--text); font: inherit; font-size: 13px; }
+  .hbtn svg { color: var(--muted); }
+  .legend button { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer;
+                   text-decoration: underline dotted; text-underline-offset: 3px; }
+  dialog.dlg { width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border-radius: 14px;
+               border: 1px solid var(--line); background: var(--panel); color: var(--text); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+  dialog.dlg::backdrop { background: rgba(0,0,0,.45); }
+  .dlg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px 6px; }
+  .dlg-head h2 { margin: 0; font-size: 16px; font-weight: 650; }
+  .dlg-head p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+  .dlg-close { border: 0; background: none; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; padding: 2px 4px; }
+  .dlg-body { padding: 8px 20px 4px; }
+  .steps { list-style: none; margin: 0; padding: 0; counter-reset: st; display: flex; flex-direction: column; gap: 16px; }
+  .steps > li { counter-increment: st; display: grid; grid-template-columns: 24px 1fr; gap: 10px; }
+  .steps > li::before { content: counter(st); width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+                        font-size: 12px; font-weight: 700; background: var(--input); border: 1px solid var(--line); color: var(--muted); }
+  .steps h3 { margin: 1px 0 4px; font-size: 13.5px; font-weight: 650; }
+  .steps p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+  .cal-img { display: block; width: 100%; image-rendering: pixelated; background: var(--paper); border-radius: 6px;
+             box-shadow: 0 0 0 1px rgba(0,0,0,.15); margin: 2px 0 6px; }
+  .dlg-foot { display: flex; align-items: center; gap: 8px; padding: 14px 20px 18px; border-top: 1px solid var(--line); margin-top: 16px; }
+  .dlg-foot .grow { flex: 1; }
+  .legend { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 16px; border-top: 1.5px dashed var(--accent); opacity: .75; }
+  .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .btn { border: 0; border-radius: 9px; padding: 10px 18px; font: inherit; font-weight: 650; cursor: pointer;
+         background: var(--accent); color: var(--accent-text); }
+  .btn:disabled { opacity: .55; cursor: progress; }
+  .btn.ghost { background: var(--input); color: var(--text); border: 1px solid var(--line); }
+  .msg { font-size: 13px; }
+  .msg.err { color: var(--err); } .msg.ok { color: var(--ok); }
+  progress { width: 160px; height: 8px; }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .presets button { border: 1px solid var(--line); background: var(--input); color: var(--text); border-radius: 7px;
+                    padding: 4px 9px; font: inherit; font-size: 12.5px; cursor: pointer; }
+  .presets button.on { border-color: var(--accent); color: var(--accent); }
+
+  /* --- bağlantı --- */
+  header { position: relative; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 10px; border-radius: 999px;
+          border: 1px solid var(--line); background: var(--input); color: var(--text); font: inherit; font-size: 13px;
+          cursor: pointer; max-width: 70vw; }
+  .chip .sub { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip .chev { color: var(--muted); font-size: 10px; transition: transform .15s; }
+  .chip[aria-expanded=true] .chev { transform: rotate(180deg); }
+  .dot { flex: none; }
+  .dot.busy { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .conn { position: absolute; right: 16px; top: calc(100% + 8px); width: min(400px, calc(100vw - 32px)); z-index: 10;
+          background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px;
+          box-shadow: 0 12px 40px rgba(0,0,0,.18); max-height: calc(100vh - 90px); overflow: auto; }
+  .conn-head { display: flex; gap: 12px; align-items: flex-start; }
+  .conn-head .big { width: 12px; height: 12px; margin-top: 5px; }
+  .conn-title { font-weight: 650; font-size: 15px; }
+  .conn-sub { color: var(--muted); font-size: 13px; margin-top: 2px; word-break: break-word; }
+  .conn-sub.err { color: var(--err); }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 13px; margin: 14px 0 0; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 12px; font-weight: 600;
+           background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+  .badge.err { background: color-mix(in srgb, var(--err) 15%, transparent); color: var(--err); }
+  .conn-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .btn.sm { padding: 7px 12px; font-size: 13px; }
+  .btn.danger { background: transparent; color: var(--err); border: 1px solid color-mix(in srgb, var(--err) 40%, var(--line)); }
+  .sec { display: flex; justify-content: space-between; align-items: center; margin: 18px 0 8px;
+         font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; font-size: 13px; }
+  .switch { position: relative; width: 36px; height: 20px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--line); cursor: pointer; transition: .15s; }
+  .switch span::after { content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%;
+                        background: #fff; transition: .15s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::after { transform: translateX(16px); }
+  .devs { display: flex; flex-direction: column; gap: 6px; }
+  .dev { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line);
+         border-radius: 10px; background: var(--input); }
+  .dev .nm { font-weight: 600; } .dev .ad { color: var(--muted); font-size: 11.5px; font-family: ui-monospace, Menlo, monospace; }
+  .dev .grow { flex: 1; min-width: 0; }
+  .bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+  .bars i { width: 3px; background: var(--line); border-radius: 1px; }
+  .bars i.on { background: var(--text); }
+  .empty { color: var(--muted); font-size: 13px; padding: 6px 2px; }
+  .events { list-style: none; margin: 0; padding: 0; font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; }
+  .events li { display: flex; gap: 8px; } .events time { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+  .events .warn { color: var(--warn); } .events .error { color: var(--err); }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent;
+          border-radius: 50%; animation: rot .7s linear infinite; vertical-align: -2px; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  .banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; font-size: 13px;
+            border: 1px solid var(--line); background: var(--panel); }
+  .banner.warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); background: color-mix(in srgb, var(--warn) 9%, var(--panel)); }
+  .banner.err { border-color: color-mix(in srgb, var(--err) 45%, var(--line)); background: color-mix(in srgb, var(--err) 8%, var(--panel)); }
+  .banner .grow { flex: 1; }
+  .linkbtn { background: none; border: 0; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 0; }
+
+  /* --- dil seçici --- */
+  .head-right { display: flex; align-items: center; gap: 10px; }
+  .lang { display: inline-flex; background: var(--input); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+  .lang button { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 650;
+                 padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+  .lang button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+</style>
+</head>
+<body>
+<header>
+  <h1 data-i18n="app_title">Label Printer</h1>
+  <div class="head-right">
+    <div class="lang" role="group" aria-label="Language">
+      <button data-lang="en">EN</button><button data-lang="tr">TR</button>
+    </div>
+    <button class="hbtn" id="calibOpen">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="1.5" y="4.5" width="13" height="7" rx="1"/><path d="M4 4.5v2.5M7 4.5v1.5M10 4.5v2.5M13 4.5v1.5"/></svg>
+      <span data-i18n="calib_open"></span>
+    </button>
+    <button class="chip" id="chip" aria-expanded="false" aria-controls="conn">
+      <span class="dot" id="dot"></span><span id="chipText"></span><span class="sub" id="chipSub"></span><span class="chev">▼</span>
+    </button>
+  </div>
+
+  <div class="conn hidden" id="conn" role="dialog" data-i18n-aria="conn_panel">
+    <div class="conn-head">
+      <span class="dot big" id="cDot"></span>
+      <div style="flex:1;min-width:0">
+        <div class="conn-title" id="cTitle"></div>
+        <div class="conn-sub" id="cSub"></div>
+      </div>
+    </div>
+    <dl class="kv hidden" id="cInfo"></dl>
+    <div class="conn-actions" id="cActions"></div>
+    <div class="toggle">
+      <span><span data-i18n="auto_reconnect"></span><br><small style="color:var(--muted)" data-i18n="auto_reconnect_hint"></small></span>
+      <label class="switch"><input type="checkbox" id="autoRe"><span></span></label>
+    </div>
+
+    <div class="sec"><span data-i18n="nearby"></span><button class="linkbtn" id="scanBtn"></button></div>
+    <div class="devs" id="devs"></div>
+
+    <div class="sec"><span data-i18n="events"></span></div>
+    <ul class="events" id="events"></ul>
+  </div>
+</header>
+
+<dialog class="dlg" id="calibDlg" data-i18n-aria="calib_title">
+  <div class="dlg-head">
+    <div><h2 data-i18n="calib_title"></h2><p id="calibFor"></p></div>
+    <button class="dlg-close" id="calibClose" data-i18n-aria="b_close">×</button>
+  </div>
+  <div class="dlg-body">
+    <ol class="steps">
+      <li><div>
+        <h3 data-i18n="cal_s1"></h3>
+        <p data-i18n="cal_s1_p"></p>
+        <img class="cal-img" id="calImg" alt="">
+        <div class="actions"><button class="btn sm" id="calPrint" data-i18n="b_calibrate"></button><span class="msg" id="calMsg"></span></div>
+      </div></li>
+      <li><div>
+        <h3 data-i18n="cal_s2"></h3>
+        <p data-i18n="cal_s2_p"></p>
+        <div class="row">
+          <label class="f"><span data-i18n="f_trim_top"></span><input id="trim_top" type="number" step="0.1" min="0" max="10" value="0"></label>
+          <label class="f"><span data-i18n="f_trim_bottom"></span><input id="trim_bottom" type="number" step="0.1" min="0" max="10" value="0"></label>
+        </div>
+      </div></li>
+      <li><div>
+        <h3 data-i18n="cal_s3"></h3>
+        <p data-i18n="cal_s3_p"></p>
+      </div></li>
+    </ol>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn sm ghost" id="calReset" data-i18n="b_reset"></button>
+    <span class="grow"></span>
+    <button class="btn sm ghost" id="calCancel" data-i18n="b_cancel"></button>
+    <button class="btn sm" id="calSave" data-i18n="b_save"></button>
+  </div>
+</dialog>
+
+<main>
+  <section class="panel">
+    <div class="tabs" id="tabs">
+      <button data-kind="text" class="on" data-i18n="tab_text"></button>
+      <button data-kind="qr" data-i18n="tab_qr"></button>
+      <button data-kind="barcode" data-i18n="tab_barcode"></button>
+      <button data-kind="image" data-i18n="tab_image"></button>
+    </div>
+
+    <div data-for="text">
+      <label class="f"><span data-i18n="f_text"></span><textarea id="text">Hello World</textarea></label>
+      <div class="row3">
+        <label class="f"><span data-i18n="f_font_style"></span>
+          <select id="font_style"><option value="bold" data-i18n="opt_bold"></option><option value="regular" data-i18n="opt_regular"></option><option value="mono" data-i18n="opt_mono"></option></select></label>
+        <label class="f"><span data-i18n="f_align"></span>
+          <select id="align"><option value="center" data-i18n="opt_center"></option><option value="left" data-i18n="opt_left"></option><option value="right" data-i18n="opt_right"></option></select></label>
+        <label class="f"><span data-i18n="f_font_size"></span><input id="font_size" type="number" min="6" max="300" data-i18n-ph="ph_auto"></label>
+      </div>
+    </div>
+
+    <div data-for="qr" class="hidden">
+      <label class="f"><span data-i18n="f_qr_data"></span><input id="qr_data" type="text" value="https://example.com"></label>
+      <div class="row">
+        <label class="f"><span data-i18n="f_caption"></span><input id="caption" type="text" data-i18n-ph="ph_optional"></label>
+        <label class="f"><span data-i18n="f_caption_side"></span>
+          <select id="caption_side"><option value="right" data-i18n="opt_side_right"></option><option value="bottom" data-i18n="opt_side_bottom"></option></select></label>
+      </div>
+    </div>
+
+    <div data-for="barcode" class="hidden">
+      <label class="f"><span data-i18n="f_bc_data"></span><input id="bc_data" type="text" value="ABC-12345"></label>
+      <div class="row">
+        <label class="f"><span data-i18n="f_bc_kind"></span>
+          <select id="barcode_kind"><option>code128</option><option>ean13</option><option>ean8</option><option>code39</option><option>upca</option></select></label>
+        <div class="checks" style="align-self:end"><label><input type="checkbox" id="show_text" checked> <span data-i18n="show_text"></span></label></div>
+      </div>
+    </div>
+
+    <div data-for="image" class="hidden">
+      <label class="f"><span data-i18n="f_image"></span><input id="file" type="file" accept="image/*"></label>
+      <div class="checks"><label><input type="checkbox" id="dither" checked> <span data-i18n="dither"></span></label></div>
+    </div>
+
+    <hr>
+    <label class="f" style="margin-bottom:6px"><span data-i18n="label_size"></span></label>
+    <div class="presets" id="presets">
+      <button data-s="50x16">50×16</button><button data-s="40x30">40×30</button><button data-s="40x20">40×20</button>
+      <button data-s="30x20">30×20</button><button data-s="50x30">50×30</button><button data-s="48x80">48×80</button>
+    </div>
+    <div class="row3">
+      <label class="f"><span data-i18n="f_width"></span><input id="width_mm" type="number" step="1" min="10" max="60" value="50"></label>
+      <label class="f"><span data-i18n="f_height"></span><input id="height_mm" type="number" step="1" min="5" max="200" value="16"></label>
+      <label class="f"><span data-i18n="f_margin"></span><input id="margin_mm" type="number" step="0.5" min="0" max="10" value="1.5"></label>
+    </div>
+    <div class="row3">
+      <label class="f"><span data-i18n="f_rotate"></span>
+        <select id="rotate"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label>
+      <label class="f"><span data-i18n="f_density"></span><input id="density" type="number" min="1" max="15" data-i18n-ph="ph_device"></label>
+      <label class="f"><span data-i18n="f_copies"></span><input id="copies" type="number" min="1" max="99" value="1"></label>
+    </div>
+    <div class="checks">
+      <label><input type="checkbox" id="border"> <span data-i18n="border"></span></label>
+      <label><input type="checkbox" id="invert"> <span data-i18n="invert"></span></label>
+    </div>
+  </section>
+
+  <section class="preview-wrap">
+    <div class="banner hidden" id="banner"><span class="dot" id="bDot"></span><span class="grow" id="bText"></span><span id="bAct"></span></div>
+    <div class="stage" id="stage"><span class="pv"><img id="preview" data-i18n-alt="preview_alt"><span class="band top hidden" id="bandTop"></span><span class="band bottom hidden" id="bandBottom"></span><span class="guide hidden" id="guide"></span></span></div>
+    <div class="meta" id="meta"></div>
+    <div class="actions" style="justify-content:center">
+      <button class="btn" id="printBtn"></button>
+      <progress id="prog" class="hidden" max="1" value="0"></progress>
+      <span class="msg" id="msg"></span>
+    </div>
+  </section>
+</main>
+
+<script>
+// ================= i18n =================
+const I18N = {
+  en: {
+    app_title: "Label Printer", conn_panel: "Printer connection", loading: "Loading…",
+    auto_reconnect: "Auto-reconnect", auto_reconnect_hint: "When the connection drops or the printer is turned back on",
+    nearby: "Nearby printers", scan: "Scan", scanning: "Scanning…", events: "Events",
+    no_scan_yet: "No scan yet.", searching: "Searching…",
+    devs_empty: "No printers found. Make sure the printer is on and press Scan. A connected printer stops advertising, so it may not appear here.",
+    tab_text: "Text", tab_qr: "QR", tab_barcode: "Barcode", tab_image: "Image",
+    f_text: "Text", f_font_style: "Font style", opt_bold: "Bold", opt_regular: "Regular", opt_mono: "Monospace",
+    f_align: "Alignment", opt_center: "Center", opt_left: "Left", opt_right: "Right", f_font_size: "Size (px)", ph_auto: "auto",
+    f_qr_data: "QR content (URL, text…)", f_caption: "Caption", ph_optional: "optional", f_caption_side: "Caption position",
+    opt_side_right: "Right", opt_side_bottom: "Below",
+    f_bc_data: "Barcode data", f_bc_kind: "Type", show_text: "Text below",
+    f_image: "Image file", dither: "Dithering (for photos)",
+    label_size: "Label size (mm)", f_width: "Width", f_height: "Height", f_margin: "Margin",
+    f_rotate: "Rotate", f_density: "Density (1–15)", ph_device: "device", f_copies: "Copies",
+    border: "Border", invert: "Invert colors", preview_alt: "Label preview",
+    meta: "{w}×{h} dots · {mw}×{mh} mm", legend_margin: "margin guide", legend_trim: "printer can't print here",
+    calib_open: "Alignment", calib_title: "Printer alignment", calib_for: "For {w}×{h} mm labels · saved per label size",
+    b_calibrate: "Print test label", b_save: "Save", b_reset: "Reset to 0", b_close: "Close",
+    f_trim_top: "Missing at top (mm)", f_trim_bottom: "Missing at bottom (mm)",
+    cal_s1: "Print the test label", cal_s1_p: "It has a mm ruler on both sides, a line at the very top and bottom, and the words TOP and BOTTOM.",
+    cal_s2: "Enter what's missing", cal_s2_p: "If the top line or the start of the ruler is cut off, enter how many mm are missing at the top. Same for BOTTOM at the bottom. Leave 0 if it's fully printed.",
+    cal_s3: "Check", cal_s3_p: "Save and print a symmetric label (e.g. a QR code with margin 0). The gaps above and below should be equal; adjust in 0.1–0.2 mm steps if not. The feed can vary by about ±0.5 mm between prints.",
+    m_calib_printed: "Printed. Read the rulers and enter the missing mm.",
+    e_trim_too_large: "The unprintable area leaves no room for content",
+    // connection states
+    printer: "Printer", first_found: "first compatible printer found",
+    st_connecting: "Connecting…", st_connecting_desc: "Looking for {name} and connecting. This can take up to 10 seconds.",
+    st_printing: "Printing", st_ready: "ready", st_connected_ready: "Connected · ready", st_ready_desc: "Ready to print",
+    st_connected_bad: "Connected · printer not ready", st_lost: "Connection lost", st_failed: "Couldn't connect",
+    st_waiting: "Will connect", st_waiting_title: "Waiting to connect", st_idle: "Not connected",
+    st_last_device: "Last device: {name}", st_idle_hint: "Press Connect or scan for printers.",
+    retry_in: "retrying in {n}s", retrying: "retrying…",
+    // info table
+    i_device: "Device", i_status: "Status", i_uptime: "Connected for", i_area: "Print area", i_mode: "Mode", i_firmware: "Firmware",
+    i_area_v: "{mm} mm · {w} dots · {dpi} DPI", i_mode_v: "{mode} · density {d} · speed {s}",
+    // buttons
+    b_refresh: "Refresh status", b_disconnect: "Disconnect", b_connecting: "Connecting…", b_cancel: "Cancel",
+    b_connect: "Connect", b_connect_to: "Connect: {name}", b_stop: "Stop retrying", b_connected: "connected",
+    b_print: "Print", b_printing: "Printing…", b_not_ready: "Printer not ready", b_connect_print: "Connect & print",
+    // banner
+    bn_not_ready: "Printer not ready: {list}", bn_check: "Check again", bn_connect_now: "Connect now",
+    bn_idle: "Printer not connected. It will connect automatically when you press Print.",
+    // messages
+    m_sending: "Sending…", m_connecting: "Connecting…", m_printed: "Printed ✓", m_preview_err: "Preview error: {e}",
+    m_server_down: "Server unreachable",
+    // time
+    t_now: "just now", t_s_ago: "{n}s ago", t_m_ago: "{n} min ago", t_h_ago: "{h} h {m} min ago",
+    d_s: "{n}s", d_ms: "{m} min {s}s", d_hm: "{h} h {m} min",
+    // printer status codes
+    s_cover_open: "cover open", s_paper_out: "out of paper", s_overheated: "overheated", s_cutter_error: "cutter error",
+    // errors
+    e_not_found: "Printer not found. Is it on? If the phone app is connected, disconnect it first.",
+    e_timeout: "Timed out: the printer didn't respond", e_lost: "Connection lost (printer turned off or out of range)",
+    e_not_ready: "Printer not ready: {list}", e_esc_unsupported: "The device is in ESC mode; only TSPL is supported for now.",
+    e_too_wide: "Image is {width} dots wide, the printer prints at most {max} dots.",
+    e_barcode_too_wide: "Barcode doesn't fit the label ({modules} modules > {width} px)",
+    e_no_image: "No image selected", e_unknown_kind: "Unknown label type: {kind}",
+    // events
+    ev_server_started: "Server started", ev_server_started_dev: "Server started, last device: {device}",
+    ev_connecting: "Connecting: {target}", ev_connecting_n: "Connecting: {target} (attempt {attempt})",
+    ev_connect_failed: "Connection failed: {error}", ev_connected: "Connected: {name}", ev_lost: "Connection lost",
+    ev_disconnected: "Disconnected", ev_switching: "Switching to another device", ev_shutdown: "Server shutting down",
+    ev_printer_warning: "Printer warning: {list}", ev_printer_ready: "Printer ready again",
+    ev_auto_on: "Auto-reconnect on", ev_auto_off: "Auto-reconnect off",
+    ev_scan_done: "Scan finished: {count} printer(s) found",
+    ev_printed: "Printed ({copies} × {w}×{h} mm)", ev_print_failed: "Print failed: {error}",
+  },
+  tr: {
+    app_title: "Etiket Yazıcısı", conn_panel: "Yazıcı bağlantısı", loading: "Yükleniyor…",
+    auto_reconnect: "Otomatik yeniden bağlan", auto_reconnect_hint: "Bağlantı koparsa ya da yazıcı yeniden açılırsa",
+    nearby: "Yakındaki yazıcılar", scan: "Tara", scanning: "Taranıyor…", events: "Olaylar",
+    no_scan_yet: "Henüz tarama yapılmadı.", searching: "Aranıyor…",
+    devs_empty: "Yazıcı bulunamadı. Yazıcının açık olduğundan emin olup Tara'ya basın. Bağlı yazıcı yayın yapmadığı için listede görünmeyebilir.",
+    tab_text: "Metin", tab_qr: "QR", tab_barcode: "Barkod", tab_image: "Resim",
+    f_text: "Metin", f_font_style: "Yazı stili", opt_bold: "Kalın", opt_regular: "Normal", opt_mono: "Sabit genişlik",
+    f_align: "Hizalama", opt_center: "Orta", opt_left: "Sol", opt_right: "Sağ", f_font_size: "Boyut (px)", ph_auto: "otomatik",
+    f_qr_data: "QR içeriği (URL, metin…)", f_caption: "Açıklama", ph_optional: "isteğe bağlı", f_caption_side: "Açıklama yeri",
+    opt_side_right: "Sağda", opt_side_bottom: "Altta",
+    f_bc_data: "Barkod verisi", f_bc_kind: "Tür", show_text: "Altına yazı",
+    f_image: "Resim dosyası", dither: "Tonlama (fotoğraf için)",
+    label_size: "Etiket boyutu (mm)", f_width: "Genişlik", f_height: "Yükseklik", f_margin: "Kenar boşluğu",
+    f_rotate: "Döndür", f_density: "Koyuluk (1–15)", ph_device: "cihaz", f_copies: "Kopya",
+    border: "Çerçeve", invert: "Ters renk", preview_alt: "Etiket önizlemesi",
+    meta: "{w}×{h} nokta · {mw}×{mh} mm", legend_margin: "kenar boşluğu kılavuzu", legend_trim: "yazıcı burayı basamıyor",
+    calib_open: "Hizalama", calib_title: "Yazıcı hizalaması", calib_for: "{w}×{h} mm etiketler için · etiket boyutu başına kaydedilir",
+    b_calibrate: "Test etiketi bas", b_save: "Kaydet", b_reset: "0'a sıfırla", b_close: "Kapat",
+    f_trim_top: "Üstte eksik (mm)", f_trim_bottom: "Altta eksik (mm)",
+    cal_s1: "Test etiketini basın", cal_s1_p: "İki yanında mm cetveli, en üstte ve en altta birer çizgi, TOP ve BOTTOM yazıları var.",
+    cal_s2: "Eksik kalanı girin", cal_s2_p: "Üst çizgi ya da cetvelin başı kesikse üstte kaç mm eksik olduğunu girin. BOTTOM tarafı için de aynısı. Tam basılmışsa 0 bırakın.",
+    cal_s3: "Kontrol edin", cal_s3_p: "Kaydedip simetrik bir etiket basın (ör. margin 0 ile QR). Üst ve alt boşluk eşit olmalı; değilse 0,1–0,2 mm adımlarla düzeltin. Besleme baskıdan baskıya yaklaşık ±0,5 mm oynayabilir.",
+    m_calib_printed: "Basıldı. Cetvellere bakıp eksik mm'leri girin.",
+    e_trim_too_large: "Basılamayan alan içeriğe yer bırakmıyor",
+    printer: "Yazıcı", first_found: "ilk bulunan uyumlu yazıcı",
+    st_connecting: "Bağlanıyor…", st_connecting_desc: "{name} aranıyor ve bağlanılıyor. Bu 10 saniye kadar sürebilir.",
+    st_printing: "Yazdırılıyor", st_ready: "hazır", st_connected_ready: "Bağlı · hazır", st_ready_desc: "Yazdırmaya hazır",
+    st_connected_bad: "Bağlı · yazıcı hazır değil", st_lost: "Bağlantı koptu", st_failed: "Bağlanamadı",
+    st_waiting: "Bağlanılacak", st_waiting_title: "Bağlanmayı bekliyor", st_idle: "Bağlı değil",
+    st_last_device: "Son cihaz: {name}", st_idle_hint: "Bağlanmak için Bağlan'a basın ya da tarayın.",
+    retry_in: "{n} sn içinde yeniden denenecek", retrying: "yeniden deneniyor…",
+    i_device: "Cihaz", i_status: "Durum", i_uptime: "Bağlantı süresi", i_area: "Baskı alanı", i_mode: "Mod", i_firmware: "Firmware",
+    i_area_v: "{mm} mm · {w} nokta · {dpi} DPI", i_mode_v: "{mode} · koyuluk {d} · hız {s}",
+    b_refresh: "Durumu yenile", b_disconnect: "Bağlantıyı kes", b_connecting: "Bağlanıyor…", b_cancel: "Vazgeç",
+    b_connect: "Bağlan", b_connect_to: "Bağlan: {name}", b_stop: "Denemeyi durdur", b_connected: "bağlı",
+    b_print: "Yazdır", b_printing: "Yazdırılıyor…", b_not_ready: "Yazıcı hazır değil", b_connect_print: "Bağlan ve yazdır",
+    bn_not_ready: "Yazıcı hazır değil: {list}", bn_check: "Tekrar kontrol et", bn_connect_now: "Şimdi bağlan",
+    bn_idle: "Yazıcı bağlı değil. Yazdır'a bastığınızda otomatik bağlanılır.",
+    m_sending: "Gönderiliyor…", m_connecting: "Bağlanılıyor…", m_printed: "Yazdırıldı ✓", m_preview_err: "Önizleme hatası: {e}",
+    m_server_down: "Sunucuya ulaşılamıyor",
+    t_now: "az önce", t_s_ago: "{n} sn önce", t_m_ago: "{n} dk önce", t_h_ago: "{h} sa {m} dk önce",
+    d_s: "{n} sn", d_ms: "{m} dk {s} sn", d_hm: "{h} sa {m} dk",
+    s_cover_open: "kapak açık", s_paper_out: "kağıt yok", s_overheated: "aşırı ısınma", s_cutter_error: "kesici hatası",
+    e_not_found: "Yazıcı bulunamadı. Açık mı? Telefon uygulaması bağlıysa önce bağlantıyı kesin.",
+    e_timeout: "Zaman aşımı: yazıcı cevap vermedi", e_lost: "Bağlantı koptu (yazıcı kapandı ya da menzil dışında)",
+    e_not_ready: "Yazıcı hazır değil: {list}", e_esc_unsupported: "Cihaz ESC modunda; şimdilik yalnızca TSPL destekleniyor.",
+    e_too_wide: "Görüntü {width} nokta, yazıcı en fazla {max} nokta basabilir.",
+    e_barcode_too_wide: "Barkod etikete sığmıyor ({modules} modül > {width} px)",
+    e_no_image: "Resim seçilmedi", e_unknown_kind: "Bilinmeyen etiket türü: {kind}",
+    ev_server_started: "Sunucu başladı", ev_server_started_dev: "Sunucu başladı, son cihaz: {device}",
+    ev_connecting: "Bağlanılıyor: {target}", ev_connecting_n: "Bağlanılıyor: {target} (deneme {attempt})",
+    ev_connect_failed: "Bağlanılamadı: {error}", ev_connected: "Bağlandı: {name}", ev_lost: "Bağlantı koptu",
+    ev_disconnected: "Bağlantı kesildi", ev_switching: "Başka cihaza geçiliyor", ev_shutdown: "Sunucu kapanıyor",
+    ev_printer_warning: "Yazıcı uyarısı: {list}", ev_printer_ready: "Yazıcı tekrar hazır",
+    ev_auto_on: "Otomatik yeniden bağlanma açık", ev_auto_off: "Otomatik yeniden bağlanma kapalı",
+    ev_scan_done: "Tarama bitti: {count} yazıcı bulundu",
+    ev_printed: "Yazdırıldı ({copies} × {w}×{h} mm)", ev_print_failed: "Baskı yapılamadı: {error}",
+  },
+};
+let lang = "en";
+try { const l = localStorage.getItem("ble-thermal-printer.lang"); if (l && I18N[l]) lang = l; } catch (e) {}
+
+function t(key, p = {}) {
+  const s = I18N[lang][key] ?? I18N.en[key] ?? key;
+  return s.replace(/\{(\w+)\}/g, (_, k) => p[k] ?? "");
+}
+const statusList = codes => (codes || []).map(c => t("s_" + c)).join(", ");
+function errText(e) {
+  if (!e) return "";
+  if (typeof e === "string") return e;
+  if (e.code === "other" || !(("e_" + e.code) in I18N.en)) return e.text || e.code;
+  return t("e_" + e.code, { ...e.params, list: statusList(e.params?.errors) });
+}
+function eventText(ev) {
+  const p = ev.params || {};
+  switch (ev.code) {
+    case "server_started": return p.device ? t("ev_server_started_dev", p) : t("ev_server_started");
+    case "connecting": return t(p.attempt ? "ev_connecting_n" : "ev_connecting", { ...p, target: p.target || t("first_found") });
+    case "connect_failed": case "print_failed": return t("ev_" + ev.code, { error: errText(p.error) });
+    case "printer_warning": return t("ev_printer_warning", { list: statusList(p.errors) });
+    case "auto_reconnect": return t(p.on ? "ev_auto_on" : "ev_auto_off");
+    default: return ("ev_" + ev.code) in I18N.en ? t("ev_" + ev.code, p) : ev.code;
+  }
+}
+
+function applyStatic() {
+  document.documentElement.lang = lang;
+  document.title = t("app_title");
+  document.querySelectorAll("[data-i18n]").forEach(el => el.textContent = t(el.dataset.i18n));
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => el.placeholder = t(el.dataset.i18nPh));
+  document.querySelectorAll("[data-i18n-alt]").forEach(el => el.alt = t(el.dataset.i18nAlt));
+  document.querySelectorAll("[data-i18n-aria]").forEach(el => el.setAttribute("aria-label", t(el.dataset.i18nAria)));
+  document.querySelectorAll("[data-i18n-title]").forEach(el => el.title = t(el.dataset.i18nTitle));
+  document.querySelectorAll("[data-lang]").forEach(b => b.classList.toggle("on", b.dataset.lang === lang));
+}
+function setLang(l) {
+  lang = l;
+  try { localStorage.setItem("ble-thermal-printer.lang", l); } catch (e) {}
+  applyStatic(); updateMeta();
+  if (S) render(S); else { $("chipText").textContent = t("loading"); $("printBtn").textContent = t("b_print"); }
+  const m = $("msg");
+  if (m.dataset.err) m.textContent = errText(JSON.parse(m.dataset.err));
+  else if (m.dataset.key) setMsgKey(m.dataset.key, JSON.parse(m.dataset.p || "{}"), m.dataset.cls);
+}
+
+// ================= editor =================
+const $ = id => document.getElementById(id);
+const FIELDS = ["text","font_style","align","font_size","qr_data","caption","caption_side","bc_data","barcode_kind",
+  "show_text","dither","width_mm","height_mm","margin_mm","rotate","density","copies","border","invert"];
+let kind = "text", imageData = null, timer = null, seq = 0;
+
+function save() {
+  try {
+    const s = { kind };
+    FIELDS.forEach(f => s[f] = $(f).type === "checkbox" ? $(f).checked : $(f).value);
+    localStorage.setItem("ble-thermal-printer", JSON.stringify(s));
+  } catch (e) {}
+}
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem("ble-thermal-printer") || "null");
+    if (!s) return;
+    FIELDS.forEach(f => { if (f in s) { if ($(f).type === "checkbox") $(f).checked = s[f]; else $(f).value = s[f]; } });
+    if (s.kind && s.kind !== "image") setKind(s.kind);
+  } catch (e) {}
+}
+
+function payload() {
+  const v = f => $(f).value, c = f => $(f).checked;
+  return {
+    kind, text: v("text"), font_style: v("font_style"), align: v("align"), font_size: v("font_size") || null,
+    data: kind === "qr" ? v("qr_data") : v("bc_data"), caption: v("caption"), caption_side: v("caption_side"),
+    barcode_kind: v("barcode_kind"), show_text: c("show_text"), dither: c("dither"), image: imageData,
+    width_mm: +v("width_mm"), height_mm: +v("height_mm"), margin_mm: +v("margin_mm"), rotate: +v("rotate"),
+    density: v("density") || null, copies: +v("copies") || 1, border: c("border"), invert: c("invert"),
+  };
+}
+
+function setKind(k) {
+  kind = k;
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.kind === k));
+  document.querySelectorAll("[data-for]").forEach(d => d.classList.toggle("hidden", d.dataset.for !== k));
+  schedule();
+}
+
+function markPreset() {
+  const s = `${$("width_mm").value}x${$("height_mm").value}`;
+  document.querySelectorAll("#presets button").forEach(b => b.classList.toggle("on", b.dataset.s === s));
+}
+
+// Mesajlar dil değişince yeniden çevrilebilsin diye anahtar + parametre olarak saklanır
+function setMsgKey(key, p = {}, cls = "") {
+  const m = $("msg");
+  m.dataset.key = key; m.dataset.p = JSON.stringify(p); m.dataset.cls = cls; m.dataset.err = "";
+  m.textContent = key ? t(key, p) : ""; m.className = "msg " + cls;
+}
+function setMsgErr(err) {
+  const m = $("msg");
+  m.dataset.key = ""; m.dataset.err = err && typeof err === "object" && err.code ? JSON.stringify(err) : "";
+  m.textContent = errText(err); m.className = "msg err";
+}
+const clearMsg = () => setMsgKey("");
+
+function schedule() { clearTimeout(timer); timer = setTimeout(refresh, 180); markPreset(); save(); }
+
+let previewSize = null, marginPx = 0, trimPx = [0, 0];
+function updateMeta() {
+  if (!previewSize) return;
+  const parts = [esc(t("meta", { w: previewSize[0], h: previewSize[1], mw: $("width_mm").value, mh: $("height_mm").value }))];
+  if (marginPx > 0) parts.push(`<span class="legend"><i></i>${esc(t("legend_margin"))}</span>`);
+  if (trimPx[0] > 0 || trimPx[1] > 0) parts.push(`<span class="legend"><i class="hatch"></i><button data-open-calib>${esc(t("legend_trim"))}</button></span>`);
+  $("meta").innerHTML = parts.join(" · ");
+}
+
+async function refresh() {
+  const my = ++seq;
+  try {
+    const r = await fetch("/api/preview", { method: "POST", body: JSON.stringify(payload()) });
+    if (my !== seq) return;
+    if (!r.ok) { setMsgErr((await r.json()).error); return; }
+    marginPx = +(r.headers.get("X-Margin-Px") || 0);
+    trimPx = (r.headers.get("X-Trim-Px") || "0,0").split(",").map(Number);
+    const url = URL.createObjectURL(await r.blob());
+    const img = $("preview");
+    img.onload = () => {
+      fitPreview();
+      previewSize = [img.naturalWidth, img.naturalHeight]; updateMeta();
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+    if ($("msg").classList.contains("err")) clearMsg();
+  } catch (e) { setMsgKey("m_preview_err", { e: String(e) }, "err"); }
+}
+
+// ================= connection =================
+let S = null, busy = null;   // busy: "connect" | "disconnect" | "scan" | "print" | null
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const shortAddr = a => !a ? "" : a.length > 20 ? a.slice(0, 8) + "…" + a.slice(-4) : a;
+function ago(ts) {
+  if (!ts || !S) return "—";
+  const s = Math.max(0, Math.round(S.now - ts));
+  if (s < 5) return t("t_now");
+  if (s < 60) return t("t_s_ago", { n: s });
+  if (s < 3600) return t("t_m_ago", { n: Math.floor(s / 60) });
+  return t("t_h_ago", { h: Math.floor(s / 3600), m: Math.floor(s % 3600 / 60) });
+}
+function dur(ts) {
+  if (!ts || !S) return "—";
+  const s = Math.max(0, Math.round(S.now - ts));
+  if (s < 60) return t("d_s", { n: s });
+  if (s < 3600) return t("d_ms", { m: Math.floor(s / 60), s: s % 60 });
+  return t("d_hm", { h: Math.floor(s / 3600), m: Math.floor(s % 3600 / 60) });
+}
+function bars(rssi) {
+  const n = rssi == null ? 0 : rssi > -60 ? 4 : rssi > -70 ? 3 : rssi > -80 ? 2 : 1;
+  return `<span class="bars" title="${rssi ?? "?"} dBm">${[5, 8, 11, 14].map((h, i) => `<i style="height:${h}px" class="${i < n ? "on" : ""}"></i>`).join("")}</span>`;
+}
+
+// Durumu tek bir görünüm modeline indirger
+function view(s) {
+  const name = s.device?.name || t("printer");
+  const errs = s.status?.errors || [];
+  const retry = s.retry_in != null ? (s.retry_in > 0 ? t("retry_in", { n: s.retry_in }) : t("retrying")) : "";
+  switch (busy === "connect" && s.phase !== "connected" ? "connecting" : s.phase) {
+    case "connecting": return { dot: "busy", chip: t("st_connecting"), sub: name, title: t("st_connecting"),
+      desc: t("st_connecting_desc", { name }) };
+    case "printing": {
+      const p = s.progress, pct = p.total ? Math.round(p.done * 100 / p.total) : 0;
+      return { dot: "busy", chip: t("st_printing"), sub: `${pct}%`, title: `${t("st_printing")} · ${pct}%`, desc: name };
+    }
+    case "connected":
+      return errs.length
+        ? { dot: "err", chip: name, sub: statusList(errs), title: t("st_connected_bad"), desc: statusList(errs), bad: true }
+        : { dot: "ok", chip: name, sub: t("st_ready"), title: t("st_connected_ready"), desc: t("st_ready_desc") };
+    case "lost": return { dot: "err", chip: t("st_lost"), sub: retry, title: t("st_lost"),
+      desc: [errText(s.error), retry].filter(Boolean).join(" · "), bad: true };
+    case "error": return { dot: "err", chip: t("st_failed"), sub: retry, title: t("st_failed"),
+      desc: [errText(s.error), retry].filter(Boolean).join(" · "), bad: true };
+    default:
+      if (s.want_connected && s.auto_reconnect && s.retry_in != null)
+        return { dot: "busy", chip: t("st_waiting"), sub: retry, title: t("st_waiting_title"), desc: retry };
+      return { dot: "", chip: t("st_idle"), sub: "", title: t("st_idle"),
+        desc: s.device ? t("st_last_device", { name: s.device.name || shortAddr(s.device.address) }) : t("st_idle_hint") };
+  }
+}
+
+function render(s) {
+  S = s;
+  const v = view(s);
+  $("dot").className = "dot " + v.dot; $("chipText").textContent = v.chip; $("chipSub").textContent = v.sub ? "· " + v.sub : "";
+  $("cDot").className = "dot big " + v.dot; $("cTitle").textContent = v.title;
+  $("cSub").textContent = v.desc || ""; $("cSub").className = "conn-sub" + (v.bad ? " err" : "");
+
+  const live = ["connected", "printing"].includes(s.phase) && s.info;
+  $("cInfo").classList.toggle("hidden", !live);
+  if (live) {
+    const i = s.info, st = s.status || {};
+    $("cInfo").innerHTML = `
+      <dt>${t("i_device")}</dt><dd>${esc(s.device.name)} <span style="color:var(--muted)">${esc(shortAddr(s.device.address))}</span></dd>
+      <dt>${t("i_status")}</dt><dd>${st.ready ? `<span class="badge">${t("st_ready")}</span>` : (st.errors || []).map(e => `<span class="badge err">${esc(t("s_" + e))}</span>`).join(" ")}
+        <span style="color:var(--muted)"> · ${ago(s.status_at)}</span></dd>
+      <dt>${t("i_uptime")}</dt><dd>${dur(s.connected_at)}</dd>
+      <dt>${t("i_area")}</dt><dd>${t("i_area_v", { mm: i.width_mm, w: i.width, dpi: i.dpi })}</dd>
+      <dt>${t("i_mode")}</dt><dd>${t("i_mode_v", { mode: esc(i.mode), d: i.density, s: i.speed })}</dd>
+      <dt>${t("i_firmware")}</dt><dd>${i.firmware} · MTU ${i.mtu}</dd>`;
+  }
+
+  const a = [];
+  const connectedish = ["connected", "printing"].includes(s.phase);
+  const connecting = s.phase === "connecting" || busy === "connect";
+  if (connectedish) {
+    a.push(`<button class="btn sm ghost" data-act="refresh">${t("b_refresh")}</button>`);
+    a.push(`<button class="btn sm danger" data-act="disconnect" ${s.phase === "printing" ? "disabled" : ""}>${t("b_disconnect")}</button>`);
+  } else if (connecting) {
+    a.push(`<button class="btn sm" disabled><span class="spin"></span> ${t("b_connecting")}</button>`);
+    a.push(`<button class="btn sm ghost" data-act="disconnect">${t("b_cancel")}</button>`);
+  } else {
+    a.push(`<button class="btn sm" data-act="connect">${s.device ? esc(t("b_connect_to", { name: s.device.name || shortAddr(s.device.address) })) : t("b_connect")}</button>`);
+    if (s.want_connected) a.push(`<button class="btn sm ghost" data-act="disconnect">${t("b_stop")}</button>`);
+  }
+  $("cActions").innerHTML = a.join("");
+  $("autoRe").checked = s.auto_reconnect;
+
+  const scanning = s.scanning || busy === "scan";
+  $("scanBtn").innerHTML = scanning ? `<span class="spin"></span> ${t("scanning")}` : t("scan");
+  $("scanBtn").disabled = scanning;
+  const devs = s.devices || [];
+  $("devs").innerHTML = devs.length ? devs.map(d => {
+    const isCur = connectedish && s.device?.address === d.address;
+    return `<div class="dev">${bars(d.rssi)}<div class="grow"><div class="nm">${esc(d.name)}</div><div class="ad">${esc(d.address)}</div></div>
+      ${isCur ? `<span class="badge">${t("b_connected")}</span>` : `<button class="btn sm ghost" data-act="connect" data-addr="${esc(d.address)}" ${connecting ? "disabled" : ""}>${t("b_connect")}</button>`}</div>`;
+  }).join("") : `<div class="empty">${scanning ? t("searching") : t("devs_empty")}</div>`;
+
+  const locale = lang === "tr" ? "tr-TR" : "en-GB";
+  $("events").innerHTML = (s.events || []).map(e =>
+    `<li class="${e.level}"><time>${new Date(e.t * 1000).toLocaleTimeString(locale)}</time><span>${esc(eventText(e))}</span></li>`).join("");
+  renderBanner(s, v);
+  renderPrintBtn(s);
+}
+
+function renderBanner(s, v) {
+  const b = $("banner");
+  let cls = "", txt = "", act = "";
+  if (s.phase === "connected" && !s.status?.ready) { cls = "err"; txt = t("bn_not_ready", { list: statusList(s.status?.errors) }); act = `<button class="linkbtn" data-act="refresh">${t("bn_check")}</button>`; }
+  else if (s.phase === "lost" || s.phase === "error") { cls = "err"; txt = v.desc; act = `<button class="linkbtn" data-act="connect">${t("bn_connect_now")}</button>`; }
+  else if (s.phase === "idle" && !(s.want_connected && s.auto_reconnect)) { cls = "warn"; txt = t("bn_idle"); act = `<button class="linkbtn" data-act="connect">${t("b_connect")}</button>`; }
+  b.classList.toggle("hidden", !cls);
+  if (cls) { b.className = "banner " + cls; $("bDot").className = "dot " + (cls === "err" ? "err" : "busy"); $("bText").textContent = txt; $("bAct").innerHTML = act; }
+}
+
+function renderPrintBtn(s) {
+  const btn = $("printBtn");
+  let key = "b_print", dis = false;
+  if (busy === "print" || s.phase === "printing") { key = "b_printing"; dis = true; }
+  else if (s.phase === "connecting" || busy === "connect") { key = "b_connecting"; dis = true; }
+  else if (s.phase === "connected" && !s.status?.ready) { key = "b_not_ready"; dis = true; }
+  else if (s.phase !== "connected") key = "b_connect_print";
+  btn.textContent = t(key); btn.disabled = dis;
+  const prog = $("prog");
+  if (s.phase === "printing" && s.progress.total) { prog.classList.remove("hidden"); prog.value = s.progress.done / s.progress.total; }
+}
+
+let pollTimer = null;
+async function poll() {
+  clearTimeout(pollTimer);
+  try { render(await (await fetch("/api/state")).json()); }
+  catch (e) { $("dot").className = "dot err"; $("chipText").textContent = t("m_server_down"); $("chipSub").textContent = ""; }
+  pollTimer = setTimeout(poll, S && ["connecting", "printing"].includes(S.phase) ? 400 : 1000);
+}
+
+async function api(path, body = {}, kind = null) {
+  busy = kind; if (S) render(S);
+  try {
+    const j = await (await fetch(path, { method: "POST", body: JSON.stringify(body) })).json();
+    if (j.state) render(j.state);
+    if (!j.ok) throw j.error;
+    return j;
+  } finally { busy = null; if (S) render(S); }
+}
+
+async function act(name, addr) {
+  try {
+    if (name === "connect") await api("/api/connect", addr ? { address: addr } : {}, "connect");
+    else if (name === "disconnect") await api("/api/disconnect", {}, "disconnect");
+    else if (name === "refresh") await api("/api/refresh", {}, null);
+  } catch (e) { setMsgErr(e); }
+}
+
+async function doPrint() {
+  setMsgKey(S?.phase === "connected" ? "m_sending" : "m_connecting");
+  $("prog").classList.remove("hidden"); $("prog").value = 0;
+  try {
+    await api("/api/print", payload(), "print");
+    $("prog").value = 1; setMsgKey("m_printed", {}, "ok");
+  } catch (e) { setMsgErr(e); }
+  finally { setTimeout(() => $("prog").classList.add("hidden"), 1200); }
+}
+
+// ================= wiring =================
+document.addEventListener("click", e => {
+  const l = e.target.closest("[data-lang]");
+  if (l) { setLang(l.dataset.lang); return; }
+  const a = e.target.closest("[data-act]");
+  if (a && !a.disabled) { act(a.dataset.act, a.dataset.addr); return; }
+  const panel = $("conn"), chip = $("chip");
+  if (chip.contains(e.target)) {
+    const open = panel.classList.toggle("hidden") === false;
+    chip.setAttribute("aria-expanded", open);
+    if (open && S && !S.devices.length && !S.scanning) api("/api/scan", {}, "scan").catch(() => {});
+  } else if (!panel.contains(e.target)) { panel.classList.add("hidden"); chip.setAttribute("aria-expanded", false); }
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") { $("conn").classList.add("hidden"); $("chip").setAttribute("aria-expanded", false); }
+  if ((e.metaKey || e.ctrlKey) && e.key === "p") { e.preventDefault(); if (!$("printBtn").disabled) doPrint(); }
+});
+$("scanBtn").onclick = () => api("/api/scan", {}, "scan").catch(setMsgErr);
+$("autoRe").onchange = () => api("/api/settings", { auto_reconnect: $("autoRe").checked }).catch(() => {});
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => setKind(b.dataset.kind));
+document.querySelectorAll("#presets button").forEach(b => b.onclick = () => {
+  const [w, h] = b.dataset.s.split("x"); $("width_mm").value = w; $("height_mm").value = h; schedule();
+});
+// Önizleme her zaman alana sığacak kadar büyük: genişliğe sığdır, ekran yüksekliğinin %65'ini aşma
+function fitPreview() {
+  const img = $("preview"), st = $("stage");
+  if (!img.naturalWidth) return;
+  const cs = getComputedStyle(st);
+  const availW = st.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const availH = window.innerHeight * 0.65;
+  const k = Math.min(availW / img.naturalWidth, availH / img.naturalHeight);
+  img.style.width = Math.floor(img.naturalWidth * k) + "px";
+  // margin kılavuzu: yazıcı noktası → ekran pikseli
+  const g = $("guide"), inset = marginPx * k, [tt, tb] = trimPx;
+  g.classList.toggle("hidden", !(marginPx > 0));
+  Object.assign(g.style, { left: inset + "px", right: inset + "px",
+                           top: (tt + marginPx) * k + "px", bottom: (tb + marginPx) * k + "px" });
+  $("bandTop").classList.toggle("hidden", !(tt > 0)); $("bandTop").style.height = tt * k + "px";
+  $("bandBottom").classList.toggle("hidden", !(tb > 0)); $("bandBottom").style.height = tb * k + "px";
+}
+new ResizeObserver(fitPreview).observe($("stage"));
+FIELDS.forEach(f => { $(f).addEventListener("input", schedule); $(f).addEventListener("change", schedule); });
+$("file").onchange = () => {
+  const f = $("file").files[0]; if (!f) return;
+  const rd = new FileReader(); rd.onload = () => { imageData = rd.result; schedule(); }; rd.readAsDataURL(f);
+};
+$("printBtn").onclick = doPrint;
+
+// ================= alignment dialog =================
+const curSize = () => [+$("width_mm").value, +$("height_mm").value];
+function calMsg(key, cls = "", raw = null) { $("calMsg").textContent = raw ?? (key ? t(key) : ""); $("calMsg").className = "msg " + cls; }
+async function openCalib() {
+  const [w, h] = curSize();
+  $("calibFor").textContent = t("calib_for", { w, h });
+  const tr = (S?.trims || {})[`${w}x${h}`] || { top_mm: 0, bottom_mm: 0 };
+  $("trim_top").value = tr.top_mm; $("trim_bottom").value = tr.bottom_mm;
+  calMsg("");
+  $("calibDlg").showModal();
+  try {
+    const r = await fetch("/api/preview", { method: "POST", body: JSON.stringify({ kind: "calibrate", width_mm: w, height_mm: h }) });
+    if (r.ok) { const u = URL.createObjectURL(await r.blob()); $("calImg").onload = () => URL.revokeObjectURL(u); $("calImg").src = u; }
+  } catch (e) {}
+}
+$("calibOpen").onclick = openCalib;
+document.addEventListener("click", e => { if (e.target.closest("[data-open-calib]")) openCalib(); });
+$("calibClose").onclick = $("calCancel").onclick = () => $("calibDlg").close();
+$("calReset").onclick = () => { $("trim_top").value = 0; $("trim_bottom").value = 0; };
+$("calPrint").onclick = async () => {
+  const [w, h] = curSize();
+  $("calPrint").disabled = true; calMsg(S?.phase === "connected" ? "m_sending" : "m_connecting");
+  try { await api("/api/print", { kind: "calibrate", width_mm: w, height_mm: h, copies: 1 }, "print"); calMsg("m_calib_printed", "ok"); }
+  catch (e) { calMsg("", "err", errText(e)); }
+  finally { $("calPrint").disabled = false; }
+};
+$("calSave").onclick = async () => {
+  const [w, h] = curSize();
+  try {
+    await api("/api/trim", { width_mm: w, height_mm: h, top_mm: +$("trim_top").value || 0, bottom_mm: +$("trim_bottom").value || 0 });
+    $("calibDlg").close(); refresh();
+  } catch (e) { calMsg("", "err", errText(e)); }
+};
+
+applyStatic(); $("chipText").textContent = t("loading"); $("printBtn").textContent = t("b_print");
+load(); markPreset(); refresh(); poll();
+</script>
+</body>
+</html>

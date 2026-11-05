@@ -1,0 +1,19 @@
+[project]
+name = "ble-thermal-printer"
+version = "0.1.0"
+description = "Desktop client (web UI + CLI) for Eleph-label compatible Bluetooth thermal label printers"
+requires-python = ">=3.10"
+dependencies = ["bleak>=0.22", "pillow>=10", "qrcode>=7", "python-barcode>=0.15"]
+
+[project.scripts]
+ble-thermal-printer = "ble_thermal_printer.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["ble_thermal_printer"]
+
+[tool.setuptools.package-data]
+ble_thermal_printer = ["web.html"]
