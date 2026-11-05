@@ -1,6 +1,6 @@
-"""Eleph-label (JX / com.sandu.JxPrinter) protokolü: sorgular, durum ve TSPL iş üretimi.
+"""Eleph-label (JX / com.sandu.JxPrinter) protocol: queries, status and TSPL job building.
 
-Doğrulanmış cihaz: MPIA P1 (BLE adı P1_xxxx), 203 DPI, 384 nokta baskı genişliği.
+Verified on an MPIA P1 (BLE name P1_xxxx): 203 DPI, 384-dot print width.
 """
 from __future__ import annotations
 
@@ -14,10 +14,10 @@ SERVICE_UUID = "000018f0-0000-1000-8000-00805f9b34fb"
 WRITE_UUID = "00002af1-0000-1000-8000-00805f9b34fb"
 NOTIFY_UUID = "00002af0-0000-1000-8000-00805f9b34fb"
 
-# --- Sorgular --------------------------------------------------------------
-DEVICE_INFO_QUERY = b"\x1b##JXIG"   # 116 bayt cevap
+# --- Queries ---------------------------------------------------------------
+DEVICE_INFO_QUERY = b"\x1b##JXIG"   # 116-byte reply
 DEVICE_INFO_LENGTH = 116
-STATUS_QUERY = b"\x1d\x61\x00"       # 4 bayt cevap (ya da "err:" + 4 bayt olay)
+STATUS_QUERY = b"\x1d\x61\x00"       # 4-byte reply (or an "err:" + 4-byte event)
 STATUS_LENGTH = 4
 
 DOTS_PER_MM = {0: 8, 1: 12, 2: 24}
@@ -27,12 +27,12 @@ DOTS_PER_MM = {0: 8, 1: 12, 2: 24}
 class DeviceInfo:
     raw: bytes
     version: int
-    width: int          # basılabilir genişlik (nokta)
+    width: int          # printable width (dots)
     dpi_type: int
     command_mode: int   # 1 = ESC, 2 = TSPL
     speed: int
     density: int
-    paper_type: int     # 1 = boşluklu etiket (gözlemlenen)
+    paper_type: int     # 1 = gap labels (observed)
     compression: bool
 
     @classmethod
@@ -84,7 +84,7 @@ class Status:
 
     @property
     def codes(self) -> list[str]:
-        """Dile bağımsız hata kodları (web arayüzü çevirir)."""
+        """Language-neutral error codes (translated by the CLI / web UI)."""
         b0, b1, b2, _ = self.raw
         return [c for c, on in (("cover_open", b0 & 0x20), ("paper_out", b2 & 0x0C == 0x0C),
                                 ("overheated", b1 & 0x40), ("cutter_error", b1 & 0x08)) if on]
@@ -99,13 +99,13 @@ class Status:
 
 # --- Raster ----------------------------------------------------------------
 def pack_rows(img: Image.Image) -> tuple[int, int, bytes]:
-    """1-bit görüntüyü MSB-first satırlara paketler; 1 = siyah."""
+    """Pack a 1-bit image into MSB-first rows; 1 = black."""
     img = img.convert("1")
     w, h = img.size
     stride = (w + 7) // 8
-    # PIL "1" modunda 0=siyah, 255=beyaz; tobytes() MSB-first ve 1=beyaz paketler.
+    # In PIL mode "1", 0 = black and 255 = white; tobytes() packs MSB-first with 1 = white.
     data = img.tobytes()
-    # 1 = siyah olacak şekilde çevir; satır sonu dolgu bitleri beyaz (0) kalsın.
+    # Invert so that 1 = black; keep the row padding bits white (0).
     out = bytearray(b ^ 0xFF for b in data)
     pad = stride * 8 - w
     if pad:
@@ -115,7 +115,7 @@ def pack_rows(img: Image.Image) -> tuple[int, int, bytes]:
     return stride, h, bytes(out)
 
 
-# --- TSPL iş üretimi ------------------------------------------------------
+# --- TSPL job --------------------------------------------------------------
 def build_tspl_job(
     img: Image.Image,
     *,
@@ -146,7 +146,7 @@ def build_tspl_job(
         comp = zlib.compress(black_one, 6)
         job += f"BITMAP {x},{y},{stride},{h},3,{len(comp)},".encode() + comp + b"\n"
     else:
-        # TSPL mod 0: 0 = siyah nokta → bitleri ters çevir
+        # TSPL mode 0: 0 = black dot, so invert the bits
         inv = bytes(b ^ 0xFF for b in black_one)
         job += f"BITMAP {x},{y},{stride},{h},0,".encode() + inv + b"\n"
     job += cmd(f"PRINT 1,{copies}")

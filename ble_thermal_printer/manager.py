@@ -1,15 +1,15 @@
-"""Kalıcı BLE bağlantı yöneticisi (web arayüzü için).
+"""Persistent BLE connection manager (used by the web interface).
 
-Durumlar (phase):
-  idle        bağlı değil, kullanıcı bağlantıyı kesmiş ya da hiç bağlanmamış
-  connecting  tarama + bağlanma sürüyor
-  connected   bağlı (yazıcı hatası varsa status.errors dolu)
-  printing    iş gönderiliyor
-  lost        bağlantı beklenmedik koptu; otomatik yeniden bağlanma bekliyor
-  error       bağlanma denemesi başarısız; otomatik yeniden deneme bekliyor olabilir
+Phases:
+  idle        not connected; the user disconnected or never connected
+  connecting  scanning and connecting
+  connected   connected (status.errors is non-empty if the printer reports a problem)
+  printing    a job is being sent
+  lost        the connection dropped unexpectedly; waiting for auto-reconnect
+  error       a connection attempt failed; an automatic retry may be scheduled
 
-Tüm BLE işleri tek bir asyncio döngüsünde (ayrı thread) ve tek kilit altında
-yürür; HTTP thread'leri yalnızca snapshot() okur ya da run() ile iş gönderir.
+All BLE work runs on one asyncio loop (in its own thread) under a single lock;
+HTTP threads only read snapshot() or submit work through run().
 """
 from __future__ import annotations
 
@@ -27,12 +27,12 @@ from .render import RenderError
 
 log = logging.getLogger("ble_thermal_printer.manager")
 
-STATUS_INTERVAL = 5.0       # bağlıyken durum sorgulama aralığı (sn)
-BACKOFF = (3, 5, 10, 20, 30)  # yeniden bağlanma bekleme süreleri (sn)
+STATUS_INTERVAL = 5.0       # status poll interval while connected (s)
+BACKOFF = (3, 5, 10, 20, 30)  # reconnect backoff delays (s)
 
 
 def err_info(e: BaseException) -> dict:
-    """Hata → {code, params, text}. Arayüz code+params'ı çevirir, text yedek/ham mesajdır."""
+    """Error -> {code, params, text}. The UI translates code+params; text is the raw fallback."""
     text = str(e) or e.__class__.__name__
     if isinstance(e, (PrinterError, RenderError)):
         return {"code": e.code, "params": e.params, "text": text}
@@ -47,7 +47,7 @@ class ConnectionManager:
     def __init__(self, target: str | None = None, *, autoconnect: bool = True):
         self.loop = asyncio.new_event_loop()
         threading.Thread(target=self.loop.run_forever, daemon=True, name="ble-loop").start()
-        self._lock = threading.Lock()          # snapshot alanları için
+        self._lock = threading.Lock()          # guards the fields read by snapshot()
         self.cfg = self._load_cfg()
 
         self.target = target or self.cfg.get("last_address")
@@ -79,7 +79,7 @@ class ConnectionManager:
     async def _init_async(self) -> None:
         self.op = asyncio.Lock()
 
-    # --- yardımcılar ---------------------------------------------------------
+    # --- helpers -------------------------------------------------------------
     def run(self, coro, timeout: float = 120):
         return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
 
@@ -119,9 +119,9 @@ class ConnectionManager:
                 "events": list(self.events)[:15], "progress": self.progress, "now": now,
             }
 
-    # --- bağlantı ------------------------------------------------------------
+    # --- connection ----------------------------------------------------------
     def _on_lost(self, printer: Printer) -> None:
-        # bleak bu geri çağrıyı döngü thread'inde çağırır
+        # bleak invokes this callback on the event loop thread
         if printer is not self.printer or self._intentional:
             return
         self._set(printer=None, phase="lost", connected_at=None,
@@ -178,7 +178,7 @@ class ConnectionManager:
 
     def _label(self, target: str | None) -> str | None:
         if not target:
-            return None  # arayüz: "ilk bulunan uyumlu yazıcı"
+            return None  # the UI shows "first compatible printer found"
         known = self.devices.get(target) or (self.device if self.device and self.device.get("address") == target else None)
         return (known or {}).get("name") or target
 
@@ -237,7 +237,7 @@ class ConnectionManager:
                 if _looks_like_printer(d, a):
                     devs[d.address] = {"name": d.name or a.local_name or "?", "address": d.address,
                                        "rssi": a.rssi, "seen": now}
-            # bağlı cihaz reklam yayınlamaz; listede kalsın
+            # a connected device stops advertising; keep it in the list
             if self.printer and self.printer.is_connected and self.printer.address not in devs:
                 devs[self.printer.address] = {**(self.device or {}), "seen": now}
             self._set(devices=devs)
@@ -246,7 +246,7 @@ class ConnectionManager:
             self._set(scanning=False)
         return self.snapshot()["devices"]
 
-    # --- baskı -------------------------------------------------------------
+    # --- printing ------------------------------------------------------------
     async def print(self, img, w_mm: float, h_mm: float, density, copies) -> None:
         async with self.op:
             if not (self.printer and self.printer.is_connected):
@@ -272,7 +272,7 @@ class ConnectionManager:
             except Exception:
                 pass
 
-    # --- arka plan izleyici --------------------------------------------------
+    # --- background monitor --------------------------------------------------
     async def _monitor(self) -> None:
         while True:
             await asyncio.sleep(1.0)

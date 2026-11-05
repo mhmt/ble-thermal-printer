@@ -1,4 +1,4 @@
-"""Etiket içeriğini 1-bit görüntüye çevirir: metin, resim, QR, barkod."""
+"""Render label content (text, image, QR, barcode) to a 1-bit bitmap."""
 from __future__ import annotations
 
 import io
@@ -48,7 +48,7 @@ class Label:
     height_mm: float = 30
     dots_per_mm: int = 8
     margin_mm: float = 1.5
-    max_width_px: int = 384  # baskı kafası: 384 nokta = 48 mm
+    max_width_px: int = 384  # print head: 384 dots = 48 mm
     max_height_px: int | None = None
 
     @property
@@ -73,7 +73,7 @@ class Label:
         return m, m, w - m, h - m
 
 
-# --- Yardımcılar ------------------------------------------------------------
+# --- Helpers ---------------------------------------------------------------
 def to_1bit(img: Image.Image, dither: bool = True, threshold: int = 128) -> Image.Image:
     g = img.convert("L")
     if dither:
@@ -100,7 +100,7 @@ def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> list[str]:
 
 def _text_block(text: str, box_w: int, box_h: int, *, style: str, font_size: int | None,
                 font_path: str | None, wrap: bool, line_spacing: float):
-    """Kutuya sığan en büyük font boyutunu bulur. (font, satırlar, satır yüksekliği) döner."""
+    """Find the largest font size that fits the box. Returns (font, lines, line height)."""
     scratch = ImageDraw.Draw(Image.new("L", (1, 1)))
 
     def layout(size: int):
@@ -146,7 +146,7 @@ def draw_text(img: Image.Image, box: tuple[int, int, int, int], text: str, *, st
 
 def paste_fit(img: Image.Image, box: tuple[int, int, int, int], src: Image.Image,
               *, dither=True, sharp=False) -> None:
-    """src'yi oranı koruyarak kutuya sığdırıp ortalar."""
+    """Fit src into the box, keeping its aspect ratio, and center it."""
     x0, y0, x1, y1 = box
     bw, bh = x1 - x0, y1 - y0
     src = ImageOps.exif_transpose(src)
@@ -162,7 +162,7 @@ def paste_fit(img: Image.Image, box: tuple[int, int, int, int], src: Image.Image
     img.paste(src, (x0 + (bw - new[0]) // 2, y0 + (bh - new[1]) // 2))
 
 
-# --- Hazır şablonlar -------------------------------------------------------
+# --- Label templates -------------------------------------------------------
 def render_text(label: Label, text: str, **kw) -> Image.Image:
     img = label.canvas()
     draw_text(img, label.inner_box(), text, **kw)
@@ -188,7 +188,7 @@ def make_qr(data: str, border: int = 0) -> Image.Image:
 
 
 def _paste_integer_scaled(img: Image.Image, box, src: Image.Image) -> None:
-    """QR/barkod gibi modüllü grafikleri tam sayı ölçekle (bulanıklık olmadan) yerleştirir."""
+    """Place module-based graphics (QR, barcodes) at an integer scale so they stay sharp."""
     x0, y0, x1, y1 = box
     k = max(1, min((x1 - x0) // src.width, (y1 - y0) // src.height))
     src = src.resize((src.width * k, src.height * k), Image.NEAREST)
@@ -219,7 +219,7 @@ def render_barcode(label: Label, data: str, *, kind="code128", show_text=True) -
 
     img = label.canvas()
     x0, y0, x1, y1 = label.inner_box()
-    # build() modül dizisi döndürür ("1"=çubuk); her modülü tam sayı piksel genişliğinde çiz
+    # build() returns the module string ("1" = bar); draw each module at an integer pixel width
     modules = "".join(barcode.get(kind, data).build()).strip("0")
     k = (x1 - x0) // len(modules)
     if k < 1:
@@ -243,9 +243,9 @@ def to_png_bytes(img: Image.Image) -> bytes:
     return buf.getvalue()
 
 
-# --- Ortak etiket oluşturucu (CLI + web) ------------------------------------
+# --- Shared label composer (CLI + web) -------------------------------------
 KINDS = ("text", "qr", "barcode", "image")
-BORDER_INSET_MM = 1.0  # kenardaki ilk/son nokta satırları basılmıyor
+BORDER_INSET_MM = 1.0  # the very first/last dot rows may not land on the label
 
 
 def effective_margin_mm(margin_mm: float, border: bool) -> float:
@@ -261,7 +261,7 @@ def compose(kind: str, *, width_mm: float, height_mm: float, margin_mm: float = 
             barcode_kind: str = "code128", show_text: bool = True,
             image: "Image.Image | str | None" = None, dither: bool = True,
             trim_top_mm: float = 0.0, trim_bottom_mm: float = 0.0) -> tuple[Image.Image, Label]:
-    """Etiketi tasarlar ve yazıcıya gidecek 1-bit görüntüyü döndürür.
+    """Lay out the label and return the 1-bit image to send to the printer.
 
     trim_top_mm / trim_bottom_mm: bands the printer can't put on the label (measured with
     `ble-thermal-printer calibrate`). Content, margins and border are laid out in the remaining area.

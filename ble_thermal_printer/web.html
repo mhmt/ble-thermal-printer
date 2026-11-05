@@ -105,7 +105,7 @@
                     padding: 4px 9px; font: inherit; font-size: 12.5px; cursor: pointer; }
   .presets button.on { border-color: var(--accent); color: var(--accent); }
 
-  /* --- bağlantı --- */
+  /* --- connection --- */
   header { position: relative; }
   .chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 10px; border-radius: 999px;
           border: 1px solid var(--line); background: var(--input); color: var(--text); font: inherit; font-size: 13px;
@@ -164,7 +164,7 @@
   .banner .grow { flex: 1; }
   .linkbtn { background: none; border: 0; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 0; }
 
-  /* --- dil seçici --- */
+  /* --- language switcher --- */
   .head-right { display: flex; align-items: center; gap: 10px; }
   .lang { display: inline-flex; background: var(--input); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
   .lang button { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 650;
@@ -292,12 +292,12 @@
     <hr>
     <label class="f" style="margin-bottom:6px"><span data-i18n="label_size"></span></label>
     <div class="presets" id="presets">
-      <button data-s="50x16">50×16</button><button data-s="40x30">40×30</button><button data-s="40x20">40×20</button>
-      <button data-s="30x20">30×20</button><button data-s="50x30">50×30</button><button data-s="48x80">48×80</button>
+      <button data-s="40x30">40×30</button><button data-s="40x20">40×20</button><button data-s="30x20">30×20</button>
+      <button data-s="50x30">50×30</button><button data-s="50x16">50×16</button><button data-s="48x80">48×80</button>
     </div>
     <div class="row3">
-      <label class="f"><span data-i18n="f_width"></span><input id="width_mm" type="number" step="1" min="10" max="60" value="50"></label>
-      <label class="f"><span data-i18n="f_height"></span><input id="height_mm" type="number" step="1" min="5" max="200" value="16"></label>
+      <label class="f"><span data-i18n="f_width"></span><input id="width_mm" type="number" step="1" min="10" max="60" value="40"></label>
+      <label class="f"><span data-i18n="f_height"></span><input id="height_mm" type="number" step="1" min="5" max="200" value="30"></label>
       <label class="f"><span data-i18n="f_margin"></span><input id="margin_mm" type="number" step="0.5" min="0" max="10" value="1.5"></label>
     </div>
     <div class="row3">
@@ -514,10 +514,12 @@ function save() {
     localStorage.setItem("ble-thermal-printer", JSON.stringify(s));
   } catch (e) {}
 }
+let needDefaultSize = true;  // first visit: take label_size from the server config
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem("ble-thermal-printer") || "null");
     if (!s) return;
+    needDefaultSize = false;
     FIELDS.forEach(f => { if (f in s) { if ($(f).type === "checkbox") $(f).checked = s[f]; else $(f).value = s[f]; } });
     if (s.kind && s.kind !== "image") setKind(s.kind);
   } catch (e) {}
@@ -546,7 +548,7 @@ function markPreset() {
   document.querySelectorAll("#presets button").forEach(b => b.classList.toggle("on", b.dataset.s === s));
 }
 
-// Mesajlar dil değişince yeniden çevrilebilsin diye anahtar + parametre olarak saklanır
+// Messages are stored as key + params so they can be re-translated when the language changes
 function setMsgKey(key, p = {}, cls = "") {
   const m = $("msg");
   m.dataset.key = key; m.dataset.p = JSON.stringify(p); m.dataset.cls = cls; m.dataset.err = "";
@@ -615,7 +617,7 @@ function bars(rssi) {
   return `<span class="bars" title="${rssi ?? "?"} dBm">${[5, 8, 11, 14].map((h, i) => `<i style="height:${h}px" class="${i < n ? "on" : ""}"></i>`).join("")}</span>`;
 }
 
-// Durumu tek bir görünüm modeline indirger
+// Reduce the server state to a single view model
 function view(s) {
   const name = s.device?.name || t("printer");
   const errs = s.status?.errors || [];
@@ -645,6 +647,11 @@ function view(s) {
 
 function render(s) {
   S = s;
+  if (needDefaultSize && s.default_size) {
+    needDefaultSize = false;
+    [$("width_mm").value, $("height_mm").value] = s.default_size;
+    schedule();
+  }
   const v = view(s);
   $("dot").className = "dot " + v.dot; $("chipText").textContent = v.chip; $("chipSub").textContent = v.sub ? "· " + v.sub : "";
   $("cDot").className = "dot big " + v.dot; $("cTitle").textContent = v.title;
@@ -778,7 +785,7 @@ document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => setKind
 document.querySelectorAll("#presets button").forEach(b => b.onclick = () => {
   const [w, h] = b.dataset.s.split("x"); $("width_mm").value = w; $("height_mm").value = h; schedule();
 });
-// Önizleme her zaman alana sığacak kadar büyük: genişliğe sığdır, ekran yüksekliğinin %65'ini aşma
+// Always show the preview as large as fits: fit the width, cap at 65% of the window height
 function fitPreview() {
   const img = $("preview"), st = $("stage");
   if (!img.naturalWidth) return;
@@ -787,7 +794,7 @@ function fitPreview() {
   const availH = window.innerHeight * 0.65;
   const k = Math.min(availW / img.naturalWidth, availH / img.naturalHeight);
   img.style.width = Math.floor(img.naturalWidth * k) + "px";
-  // margin kılavuzu: yazıcı noktası → ekran pikseli
+  // margin guide: printer dots -> screen pixels
   const g = $("guide"), inset = marginPx * k, [tt, tb] = trimPx;
   g.classList.toggle("hidden", !(marginPx > 0));
   Object.assign(g.style, { left: inset + "px", right: inset + "px",

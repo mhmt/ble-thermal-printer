@@ -1,4 +1,4 @@
-"""BLE bağlantısı (bleak) — macOS / Linux / Windows."""
+"""BLE transport (bleak) for macOS / Linux / Windows."""
 from __future__ import annotations
 
 import asyncio
@@ -49,7 +49,7 @@ async def scan(timeout: float = 6.0) -> list[tuple[BLEDevice, int]]:
 
 
 async def find(target: str | None = None, timeout: float = 8.0) -> BLEDevice:
-    """target: BLE adı/alt dizgesi ya da adres. Boşsa ilk bulunan uyumlu yazıcı."""
+    """target: BLE name (or part of it) or address. If empty, the first compatible printer."""
     def match(d: BLEDevice, a) -> bool:
         if target:
             t = target.lower()
@@ -65,7 +65,7 @@ async def find(target: str | None = None, timeout: float = 8.0) -> BLEDevice:
 
 
 class Printer:
-    """async with Printer() as p: await p.print_job(...)"""
+    """async with Printer() as p: await p.print_image(...)"""
 
     def __init__(self, target: str | None = None, *, chunk: int | None = None, delay: float = 0.0,
                  on_disconnect=None, scan_timeout: float = 8.0):
@@ -163,14 +163,14 @@ class Printer:
     async def send_job(self, job: bytes, progress=None, settle: float = 1.0) -> None:
         self._rx.clear()
         await self._write(job, progress)
-        # Son paketlerin yazıcıya ulaşması için kısa bekleme
+        # Give the last packets time to reach the printer
         await asyncio.sleep(settle)
         if self._rx:
             log.info("Printer message after job: %s", bytes(self._rx).hex(" "))
 
     async def print_image(self, img, label_w_mm: float, label_h_mm: float, *,
                           density: int | None = None, copies: int = 1, progress=None) -> None:
-        """Durumu kontrol eder, TSPL işi üretir ve gönderir."""
+        """Check status, build the TSPL job and send it."""
         from .protocol import build_tspl_job
 
         info = self.info or await self.get_info()

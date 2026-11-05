@@ -1,4 +1,4 @@
-"""BLE keşif aracı: yazıcıyı bul, GATT servislerini dök, JXIG + durum sorgula."""
+"""BLE discovery tool: find the printer, dump its GATT services, query JXIG and status."""
 import asyncio
 import sys
 
@@ -9,7 +9,7 @@ WRITE = "00002af1-0000-1000-8000-00805f9b34fb"
 
 
 async def main():
-    print("Taranıyor (8 sn)...")
+    print("Scanning (8 s)...")
     found = await BleakScanner.discover(timeout=8.0, return_adv=True)
     for addr, (dev, adv) in sorted(found.items(), key=lambda kv: -kv[1][1].rssi):
         print(f"  {addr}  rssi={adv.rssi:4}  name={dev.name!r}  uuids={adv.service_uuids}")
@@ -23,9 +23,9 @@ async def main():
             target = dev
             break
     if not target:
-        print("Yazıcı bulunamadı.")
+        print("Printer not found.")
         return
-    print(f"\nBağlanılıyor: {target.name} {target.address}")
+    print(f"\nConnecting: {target.name} {target.address}")
     async with BleakClient(target) as c:
         print("MTU:", c.mtu_size)
         for s in c.services:
@@ -35,7 +35,7 @@ async def main():
         buf = bytearray()
         c_has_notify = any(ch.uuid == NOTIFY for s in c.services for ch in s.characteristics)
         if not c_has_notify:
-            print("Beklenen 2AF0/2AF1 karakteristikleri yok!")
+            print("Expected 2AF0/2AF1 characteristics not found!")
             return
         await c.start_notify(NOTIFY, lambda _, d: buf.extend(d))
 
@@ -43,7 +43,7 @@ async def main():
         await asyncio.sleep(1.5)
         info = bytes(buf)
         buf.clear()
-        print(f"\nJXIG cevabı ({len(info)} bayt):\n{info.hex(' ')}\n{info!r}")
+        print(f"\nJXIG reply ({len(info)} bytes):\n{info.hex(' ')}\n{info!r}")
         if len(info) >= 23:
             print("  version   =", int.from_bytes(info[6:8], "little"))
             print("  width     =", int.from_bytes(info[8:10], "little"))
@@ -56,7 +56,7 @@ async def main():
 
         await c.write_gatt_char(WRITE, b"\x1d\x61\x00", response=False)
         await asyncio.sleep(1.0)
-        print(f"\nDurum cevabı: {bytes(buf).hex(' ')}")
+        print(f"\nStatus reply: {bytes(buf).hex(' ')}")
 
 
 asyncio.run(main())

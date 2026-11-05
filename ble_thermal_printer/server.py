@@ -1,4 +1,4 @@
-"""Yerel web arayüzü: http://127.0.0.1:8765 — bağlantı yönetimi manager.py içinde.
+"""Local web interface on http://127.0.0.1:8765. Connection handling lives in manager.py.
 """
 from __future__ import annotations
 
@@ -28,7 +28,8 @@ def compose_from_json(req: dict) -> tuple[Image.Image, render.Label]:
             raise render.RenderError("no_image", "No image selected")
         image = Image.open(io.BytesIO(base64.b64decode(data_url.split(",", 1)[1])))
     font_size = int(req["font_size"]) if req.get("font_size") else None
-    w, h = float(req.get("width_mm", 50)), float(req.get("height_mm", 16))
+    dw, dh = config.get_label_size()
+    w, h = float(req.get("width_mm") or dw), float(req.get("height_mm") or dh)
     if req.get("kind") == "calibrate":
         return render.render_calibration(w, h)
     top, bottom = config.get_trim(w, h)
@@ -46,7 +47,7 @@ def compose_from_json(req: dict) -> tuple[Image.Image, render.Label]:
 
 def make_handler(mgr: ConnectionManager):
     def full_state() -> dict:
-        return {**mgr.snapshot(), "trims": config.all_trims()}
+        return {**mgr.snapshot(), "trims": config.all_trims(), "default_size": config.get_label_size()}
 
     def page() -> bytes:
         return resources.files("ble_thermal_printer").joinpath("web.html").read_bytes()

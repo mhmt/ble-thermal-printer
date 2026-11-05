@@ -55,13 +55,13 @@ ble-thermal-printer text "Test" --preview out.png         # save a PNG instead o
 ble-thermal-printer calibrate --size 40x30                # print an alignment test label
 ```
 
-Common options: `--size WxH` (mm, default `50x16`), `--margin`, `--density 1-15`, `--copies`, `--rotate`, `--border`, `--invert`, `--printer NAME_OR_ADDRESS`, `--trim-top/--trim-bottom MM`.
+Common options: `--size WxH` (mm, default `40x30` or `label_size` from the config), `--margin`, `--density 1-15`, `--copies`, `--rotate`, `--border`, `--invert`, `--printer NAME_OR_ADDRESS`, `--trim-top/--trim-bottom MM`.
 
 Output is in English. Use `--lang tr` (anywhere in the command) or `BLE_THERMAL_PRINTER_LANG=tr` for Turkish.
 
 ## Alignment calibration
 
-Gap-label printers don't always place the image exactly on the label. On a 50×16 mm roll, the last ~0.6 mm of a 16 mm image falls into the gap between labels, so content looks shifted down. ble-thermal-printer handles this with an **unprintable band** at the top and bottom for each label size. Content, margins and borders are laid out in the area that remains, and the preview shows the band hatched in red.
+Gap-label printers don't always place the image exactly on the label. For example, on one 50×16 mm roll the last ~0.5 mm of a 16 mm image fell into the gap between labels, so content looked shifted down. ble-thermal-printer handles this with an **unprintable band** at the top and bottom for each label size. Content, margins and borders are laid out in the area that remains, and the preview shows the band hatched in red.
 
 To calibrate a new roll:
 
@@ -69,7 +69,28 @@ To calibrate a new roll:
 2. Enter how many mm are missing at the top and bottom, then save.
 3. Print a symmetric label (e.g. a QR code with margin 0) and check that the gaps above and below are equal. Adjust in 0.1–0.2 mm steps if needed.
 
-The feed position can vary by about ±0.5 mm between prints. Values are stored per label size in `~/.config/ble-thermal-printer/config.json`.
+There is no correction by default. The feed position can vary by about ±0.5 mm between prints. Values are stored per label size in the config file (see below).
+
+## Configuration
+
+Settings live in `~/.config/ble-thermal-printer/config.json` (or `$XDG_CONFIG_HOME/ble-thermal-printer/config.json`). The app creates and updates the file; all keys are optional:
+
+```json
+{
+  "label_size": "50x16",
+  "auto_reconnect": true,
+  "last_address": "…",
+  "last_name": "…",
+  "trims": { "50x16": { "top_mm": 0.0, "bottom_mm": 0.5 } }
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `label_size` | Default label size (`WxH` in mm) for the CLI and for the web interface on first use. Defaults to `40x30`. |
+| `auto_reconnect` | Reconnect automatically when the connection drops (toggle in the connection panel). |
+| `last_address`, `last_name` | Printer to connect to on startup; set after a successful connection. |
+| `trims` | Alignment calibration per label size, set in the **Alignment** dialog. |
 
 ## Protocol
 

@@ -21,7 +21,7 @@ def parse_size(s: str) -> tuple[float, float]:
 
 
 def add_common(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--size", type=parse_size, default=(50, 16), help=t("h_size"))
+    p.add_argument("--size", type=parse_size, default=None, help=t("h_size"))
     p.add_argument("--margin", type=float, default=1.5, help=t("h_margin"))
     p.add_argument("--density", type=int, help=t("h_density"))
     p.add_argument("--copies", type=int, default=1, help=t("h_copies"))
@@ -35,7 +35,7 @@ def add_common(p: argparse.ArgumentParser) -> None:
 
 
 def build_image(args) -> tuple[Image.Image, render.Label]:
-    w, h = args.size
+    w, h = args.size or config.get_label_size()
     top, bottom = config.get_trim(w, h)
     common = dict(width_mm=w, height_mm=h, margin_mm=args.margin, rotate=args.rotate,
                   border=args.border, invert=args.invert,
