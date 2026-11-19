@@ -217,3 +217,22 @@ def connect_address(req) -> str | None:
 def auto_reconnect(req) -> bool | None:
     req = _require_dict(req)
     return _bool(req, "auto_reconnect", False) if "auto_reconnect" in req else None
+
+
+def token_request(req) -> dict:
+    """Fields for tokens.create() from the web interface."""
+    from . import tokens
+    req = _require_dict(req)
+    name = _str(req, "name", tokens.MAX_NAME).strip()
+    if not name:
+        raise ValidationError("name", "required")
+    return {"name": name, "scope": _choice(req, "scope", tokens.SCOPES, "print"),
+            "daily_labels": _int(req, "daily_labels", 0, 100_000, default=tokens.DEFAULT_DAILY_LABELS),
+            "rate_per_min": _int(req, "rate_per_min", 1, 600, default=tokens.DEFAULT_RATE_PER_MIN)}
+
+
+def token_id(req) -> str:
+    v = _str(_require_dict(req), "id", 64)
+    if not v:
+        raise ValidationError("id", "required")
+    return v

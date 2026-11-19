@@ -24,6 +24,7 @@ from bleak import BleakScanner
 from . import config
 from .ble import Printer, PrinterError, _looks_like_printer
 from .render import RenderError
+from .tokens import TokenError
 
 log = logging.getLogger("ble_thermal_printer.manager")
 
@@ -34,7 +35,7 @@ BACKOFF = (3, 5, 10, 20, 30)  # reconnect backoff delays (s)
 def err_info(e: BaseException) -> dict:
     """Error -> {code, params, text}. The UI translates code+params; text is the raw fallback."""
     text = str(e) or e.__class__.__name__
-    if isinstance(e, (PrinterError, RenderError)):
+    if isinstance(e, (PrinterError, RenderError, TokenError)):
         return {"code": e.code, "params": e.params, "text": text}
     if isinstance(e, (asyncio.TimeoutError, TimeoutError)):
         return {"code": "timeout", "params": {}, "text": text}

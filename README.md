@@ -99,6 +99,22 @@ rest_command:
     payload: '{"kind": "text", "text": {{ text | tojson }}}'
 ```
 
+Tokens can also be created and revoked in the web interface (**API** button in the header).
+
+### Home Assistant
+
+The [Home Assistant add-on and integration](https://github.com/mhmt/ble-thermal-printer-ha) package this server: the web interface opens in the sidebar, automations print with an event or the `label_printer.print` action, and a sensor shows the printer state.
+
+Without the add-on, the server can connect to Home Assistant itself (`pip install 'ble-thermal-printer[hass]'`):
+
+```bash
+HASS_TOKEN=<long-lived access token> ble-thermal-printer serve --hass ws://homeassistant.local:8123/api/websocket
+```
+
+It then prints on `label_printer_print` events (event data = label JSON, plus an optional `request_id`). It answers with `label_printer_printed` or `label_printer_print_failed` events carrying the same `request_id`, and keeps `sensor.label_printer` updated. The sensor state is one of `ready`, `printing`, `not_ready`, `connecting` or `disconnected`; its attributes are `errors`, `printer` and `label_size`. Use `--hass-entity ''` to turn the sensor off.
+
+Other `serve` options for running behind Home Assistant: `--trusted-proxy 172.30.32.2` serves the web interface only to the Ingress proxy, and `--api-port 8765` adds a listener that serves only `/api/v1`.
+
 ### Access from the internet
 
 Only expose the API, never the web interface. With [Tailscale Funnel](https://tailscale.com/kb/1223/funnel), for example `tailscale funnel 8765`, start the server with `--public-host <machine>.<tailnet>.ts.net` (or set `public_hosts` in the config). Requests under that host name, and any request carrying Funnel's `Tailscale-Funnel-Request` header, can reach `/api/v1` only; everything else returns `404`. The web interface stays available on the local network.
@@ -186,6 +202,7 @@ The protocol details come from the Eleph implementation in [TiMini-Print](https:
 | `ble_thermal_printer/httpguard.py` | Host allow-list, cross-site and body-size checks for the web server |
 | `ble_thermal_printer/schema.py` | Validation of label requests received over HTTP |
 | `ble_thermal_printer/api.py`, `ble_thermal_printer/tokens.py` | `/api/v1` endpoints, token store, limits, idempotency |
+| `ble_thermal_printer/hass.py` | Home Assistant bridge: print events and the status sensor |
 | `ble_thermal_printer/cli.py`, `ble_thermal_printer/i18n.py` | Command line and its messages |
 | `ble_thermal_printer/config.py` | Saved settings (last printer, calibration) |
 | `tools/probe.py` | Raw BLE discovery and protocol probe |

@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 
 from PIL import Image
 
-from . import api, config, httpguard, render, schema
+from . import api, config, httpguard, render, schema, tokens
 from .i18n import t
 from .manager import ConnectionManager, err_info
 
@@ -30,11 +30,16 @@ def compose_from_json(req) -> tuple[Image.Image, render.Label, schema.LabelReque
 
 
 def make_handler(mgr: ConnectionManager, hosts: set[str] | frozenset[str] | None = frozenset(httpguard.LOOPBACK),
-                 public_hosts: set[str] | frozenset[str] = frozenset()):
-    """hosts: accepted Host header names (see httpguard.allowed_hosts); None accepts any.
-    public_hosts: names under which the server is reachable from the internet; only /api/v1 is served there.
+                 public_hosts: set[str] | frozenset[str] = frozenset(), *, api_only: bool = False,
+                 trusted_proxy: str | None = None, api_v1: api.ApiV1 | None = None):
     """
-    api_v1 = api.ApiV1(mgr)
+    hosts: accepted Host header names (see httpguard.allowed_hosts); None accepts any.
+    public_hosts: names under which the server is reachable from the internet; only /api/v1 is served there.
+    api_only: serve only /api/v1 (a separate API port; requests are authenticated by token).
+    trusted_proxy: accept connections only from this address (Home Assistant Ingress: 172.30.32.2).
+    api_v1: share one API instance (rate limits, idempotency keys) between listeners.
+    """
+    api_v1 = api_v1 or api.ApiV1(mgr)
     def full_state() -> dict:
         return {**mgr.snapshot(), "trims": config.all_trims(), "default_size": config.get_label_size()}
 
@@ -84,6 +89,9 @@ def make_handler(mgr: ConnectionManager, hosts: set[str] | frozenset[str] | None
 
         def _handle(self, method: str) -> None:
             path = urlsplit(self.path).path
+            if trusted_proxy and self.client_address[0] != trusted_proxy:
+                log.warning("Rejected connection from %s (only %s is allowed)", self.client_address[0], trusted_proxy)
+                return self._reject(httpguard.Rejected(403, "forbidden", "Forbidden"))
             try:
                 httpguard.check(method, self.headers, hosts)
             except httpguard.Rejected as r:
@@ -94,7 +102,7 @@ def make_handler(mgr: ConnectionManager, hosts: set[str] | frozenset[str] | None
                 if method == "POST" and rep.status >= 400:
                     self.close_connection = True  # the body may not have been read
                 return self._send(rep.status, rep.body, rep.ctype, rep.headers)
-            if self._is_public():
+            if api_only or self._is_public():
                 self.close_connection = True
                 return self._send(404, b"not found", "text/plain")
             if method == "GET":
@@ -117,6 +125,8 @@ def make_handler(mgr: ConnectionManager, hosts: set[str] | frozenset[str] | None
                 return self._send(200, page(), "text/html; charset=utf-8")
             if path == "/api/state":
                 return self._json(full_state())
+            if path == "/api/tokens":
+                return self._json({"ok": True, "tokens": [_token_info(k) for k in tokens.list_tokens()]})
             self._send(404, b"not found", "text/plain")
 
         def _ui_post(self, path: str, req) -> None:
@@ -136,6 +146,14 @@ def make_handler(mgr: ConnectionManager, hosts: set[str] | frozenset[str] | None
                         mgr.set_auto_reconnect(on)
                 elif path == "/api/trim":
                     config.set_trim(*schema.trim_request(req))
+                elif path == "/api/tokens/create":
+                    tok, secret = tokens.create(**schema.token_request(req))
+                    log.info("API token created from the web interface: %s (%s)", tok.name, tok.id)
+                    return self._json({"ok": True, "token": _token_info(tok), "secret": secret})
+                elif path == "/api/tokens/revoke":
+                    tok = tokens.revoke(schema.token_id(req))
+                    log.info("API token revoked from the web interface: %s (%s)", tok.name, tok.id)
+                    return self._json({"ok": True, "tokens": [_token_info(k) for k in tokens.list_tokens()]})
                 elif path in ("/api/preview", "/api/print"):
                     img, label, lr = compose_from_json(req)
                     if path == "/api/preview":
@@ -160,6 +178,11 @@ def make_handler(mgr: ConnectionManager, hosts: set[str] | frozenset[str] | None
     return Handler
 
 
+def _token_info(k: tokens.Token) -> dict:
+    return {"id": k.id, "name": k.name, "scope": k.scope, "daily_labels": k.daily_labels,
+            "rate_per_min": k.rate_per_min, "created": k.created}
+
+
 def _cfg_list(cfg: dict, key: str) -> list[str]:
     v = cfg.get(key) or []
     return [v] if isinstance(v, str) else [str(x) for x in v]
@@ -167,16 +190,33 @@ def _cfg_list(cfg: dict, key: str) -> list[str]:
 
 def serve(host: str = "127.0.0.1", port: int = 8765, target: str | None = None, open_browser=True,
           autoconnect: bool = True, allowed_hosts: list[str] | tuple[str, ...] = (),
-          public_hosts: list[str] | tuple[str, ...] = ()) -> None:
+          public_hosts: list[str] | tuple[str, ...] = (), trusted_proxy: str | None = None,
+          api_port: int | None = None, hass: str | None = None, hass_entity: str | None = None) -> None:
+    """trusted_proxy: serve the web interface only to this address (Home Assistant Ingress) and skip the
+    Host check, since the proxy forwards the browser's Host. api_port: an extra listener for /api/v1 only.
+    hass: Home Assistant WebSocket URL, or 'supervisor' inside an add-on (see hass.py)."""
     logging.getLogger("ble_thermal_printer").setLevel(logging.INFO)
     cfg = config.load()
     public = {httpguard.split_host(h) for h in [*_cfg_list(cfg, "public_hosts"), *public_hosts] if h.strip()}
-    hosts = httpguard.allowed_hosts(host, [*_cfg_list(cfg, "allowed_hosts"), *allowed_hosts, *public])
+    hosts = None if trusted_proxy else \
+        httpguard.allowed_hosts(host, [*_cfg_list(cfg, "allowed_hosts"), *allowed_hosts, *public])
     mgr = ConnectionManager(target, autoconnect=autoconnect)
-    httpd = ThreadingHTTPServer((host, port), make_handler(mgr, hosts, frozenset(public)))
+    api_v1 = api.ApiV1(mgr)
+    httpd = ThreadingHTTPServer((host, port), make_handler(mgr, hosts, frozenset(public),
+                                                          trusted_proxy=trusted_proxy, api_v1=api_v1))
+    api_httpd = None
+    if api_port:
+        api_httpd = ThreadingHTTPServer((host, api_port), make_handler(mgr, None, api_only=True, api_v1=api_v1))
+        threading.Thread(target=api_httpd.serve_forever, daemon=True, name="api-http").start()
+        log.info("API-only listener on port %d (token required)", api_port)
+    if hass:
+        from . import hass as hass_bridge
+        hass_bridge.start(mgr, hass, hass_bridge.DEFAULT_ENTITY if hass_entity is None else hass_entity)
     url = f"http://{'127.0.0.1' if host in httpguard.WILDCARD else host}:{port}/"
     print(t("serve_url", url=url), flush=True)
-    if not httpguard.is_loopback(host):
+    if trusted_proxy:
+        log.info("Web interface only for %s (reverse proxy / Home Assistant Ingress)", trusted_proxy)
+    elif not httpguard.is_loopback(host):
         print(t("serve_exposed"), flush=True)
     log.info("Allowed Host names: %s", "any" if hosts is None else ", ".join(sorted(hosts)))
     if public:
@@ -193,3 +233,6 @@ def serve(host: str = "127.0.0.1", port: int = 8765, target: str | None = None, 
         except Exception:
             pass
         httpd.server_close()
+        if api_httpd:
+            api_httpd.shutdown()
+            api_httpd.server_close()

@@ -33,6 +33,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         "h_host": "HTTP host",
         "h_no_browser": "don't open a browser",
         "h_no_autoconnect": "don't connect to the printer on startup",
+        "h_trusted_proxy": ("serve the web interface only to this address and skip the Host check "
+                            "(Home Assistant Ingress: 172.30.32.2)"),
+        "h_api_port": "extra port that serves only /api/v1 (token required)",
+        "h_hass": ("connect to Home Assistant: its WebSocket URL with a token in HASS_TOKEN, or 'supervisor' "
+                   "inside an add-on; prints on label_printer_print events"),
+        "h_hass_entity": "state entity to publish (default sensor.label_printer; '' turns it off)",
         "h_token": "manage API tokens for /api/v1 (webhooks, scripts, Home Assistant)",
         "h_token_create": "create a token (shown once)",
         "h_token_name": "a name for the client, e.g. home-assistant",
@@ -149,6 +155,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         "h_host": "HTTP adresi",
         "h_no_browser": "tarayıcı açma",
         "h_no_autoconnect": "açılışta yazıcıya bağlanma",
+        "h_trusted_proxy": ("web arayüzünü yalnızca bu adrese sun ve Host kontrolünü atla "
+                            "(Home Assistant Ingress: 172.30.32.2)"),
+        "h_api_port": "yalnızca /api/v1 sunan ek port (token gerekir)",
+        "h_hass": ("Home Assistant'a bağlan: WebSocket URL'si (token HASS_TOKEN'da) ya da add-on içinde "
+                   "'supervisor'; label_printer_print olaylarında baskı alır"),
+        "h_hass_entity": "yayınlanacak durum entity'si (varsayılan sensor.label_printer; '' kapatır)",
         "h_token": "/api/v1 için API token'larını yönet (webhook, script, Home Assistant)",
         "h_token_create": "token oluştur (yalnızca bir kez gösterilir)",
         "h_token_name": "istemci için bir ad, örn. home-assistant",

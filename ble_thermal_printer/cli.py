@@ -150,6 +150,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-autoconnect", action="store_true", help=t("h_no_autoconnect"))
     s.add_argument("--allowed-host", action="append", default=[], metavar="NAME", help=t("h_allowed_host"))
     s.add_argument("--public-host", action="append", default=[], metavar="NAME", help=t("h_public_host"))
+    s.add_argument("--trusted-proxy", metavar="IP", help=t("h_trusted_proxy"))
+    s.add_argument("--api-port", type=int, metavar="PORT", help=t("h_api_port"))
+    s.add_argument("--hass", metavar="URL", help=t("h_hass"))
+    s.add_argument("--hass-entity", metavar="ENTITY_ID", help=t("h_hass_entity"))
 
     s = sub.add_parser("token", help=t("h_token"))
     ts = s.add_subparsers(dest="token_cmd", required=True)
@@ -224,7 +228,8 @@ def main(argv=None) -> None:
             from .server import serve
             serve(args.host, args.port, args.printer, open_browser=not args.no_browser,
                   autoconnect=not args.no_autoconnect, allowed_hosts=args.allowed_host,
-                  public_hosts=args.public_host)
+                  public_hosts=args.public_host, trusted_proxy=args.trusted_proxy,
+                  api_port=args.api_port, hass=args.hass, hass_entity=args.hass_entity)
         elif args.cmd == "token":
             cmd_token(args)
         else:
