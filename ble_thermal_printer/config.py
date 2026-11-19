@@ -8,7 +8,11 @@ from pathlib import Path
 
 log = logging.getLogger("ble_thermal_printer.config")
 
-CONFIG_PATH = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "ble-thermal-printer" / "config.json"
+# BLE_THERMAL_PRINTER_CONFIG points to the file directly (e.g. /var/lib/... for a system service).
+CONFIG_PATH = Path(
+    os.environ.get("BLE_THERMAL_PRINTER_CONFIG")
+    or Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "ble-thermal-printer" / "config.json"
+)
 
 DEFAULT_LABEL_SIZE = (40.0, 30.0)
 

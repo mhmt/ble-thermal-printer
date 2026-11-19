@@ -352,6 +352,8 @@ const I18N = {
     cal_s3: "Check", cal_s3_p: "Save and print a symmetric label (e.g. a QR code with margin 0). The gaps above and below should be equal; adjust in 0.1–0.2 mm steps if not. The feed can vary by about ±0.5 mm between prints.",
     m_calib_printed: "Printed. Read the rulers and enter the missing mm.",
     e_trim_too_large: "The unprintable area leaves no room for content",
+    e_invalid: "Invalid value for {field}: {reason}", e_too_large: "The request is too large (max 8 MB)",
+    e_bad_json: "The request is not valid JSON",
     // connection states
     printer: "Printer", first_found: "first compatible printer found",
     st_connecting: "Connecting…", st_connecting_desc: "Looking for {name} and connecting. This can take up to 10 seconds.",
@@ -420,6 +422,8 @@ const I18N = {
     cal_s3: "Kontrol edin", cal_s3_p: "Kaydedip simetrik bir etiket basın (ör. margin 0 ile QR). Üst ve alt boşluk eşit olmalı; değilse 0,1–0,2 mm adımlarla düzeltin. Besleme baskıdan baskıya yaklaşık ±0,5 mm oynayabilir.",
     m_calib_printed: "Basıldı. Cetvellere bakıp eksik mm'leri girin.",
     e_trim_too_large: "Basılamayan alan içeriğe yer bırakmıyor",
+    e_invalid: "Geçersiz değer ({field}): {reason}", e_too_large: "İstek çok büyük (en fazla 8 MB)",
+    e_bad_json: "İstek geçerli bir JSON değil",
     printer: "Yazıcı", first_found: "ilk bulunan uyumlu yazıcı",
     st_connecting: "Bağlanıyor…", st_connecting_desc: "{name} aranıyor ve bağlanılıyor. Bu 10 saniye kadar sürebilir.",
     st_printing: "Yazdırılıyor", st_ready: "hazır", st_connected_ready: "Bağlı · hazır", st_ready_desc: "Yazdırmaya hazır",
@@ -525,6 +529,35 @@ function load() {
   } catch (e) {}
 }
 
+// The server only accepts JSON POSTs (cross-site pages can't send them without a CORS preflight).
+const post = (path, body) => fetch(path, {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+});
+
+// Large photos are downsized before upload: labels are at most a few hundred dots per side,
+// and the server rejects bodies over 8 MB.
+const MAX_IMAGE_SIDE = 2000, MAX_RAW_IMAGE_BYTES = 1.5e6;
+function readDataUrl(file) {
+  return new Promise((ok, fail) => {
+    const rd = new FileReader(); rd.onload = () => ok(rd.result); rd.onerror = () => fail(rd.error); rd.readAsDataURL(file);
+  });
+}
+async function readImage(file) {
+  const url = URL.createObjectURL(file), img = new Image();
+  try {
+    await new Promise((ok, fail) => { img.onload = ok; img.onerror = fail; img.src = url; });
+  } catch (e) {
+    return readDataUrl(file);  // not decodable here; let the server report the format
+  } finally { URL.revokeObjectURL(url); }
+  const w = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, MAX_IMAGE_SIDE / Math.max(w, h));
+  if (k === 1 && file.size <= MAX_RAW_IMAGE_BYTES) return readDataUrl(file);
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+  const g = c.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+  return file.type === "image/jpeg" ? c.toDataURL("image/jpeg", 0.92) : c.toDataURL("image/png");
+}
+
 function payload() {
   const v = f => $(f).value, c = f => $(f).checked;
   return {
@@ -575,7 +608,7 @@ function updateMeta() {
 async function refresh() {
   const my = ++seq;
   try {
-    const r = await fetch("/api/preview", { method: "POST", body: JSON.stringify(payload()) });
+    const r = await post("/api/preview", payload());
     if (my !== seq) return;
     if (!r.ok) { setMsgErr((await r.json()).error); return; }
     marginPx = +(r.headers.get("X-Margin-Px") || 0);
@@ -737,7 +770,7 @@ async function poll() {
 async function api(path, body = {}, kind = null) {
   busy = kind; if (S) render(S);
   try {
-    const j = await (await fetch(path, { method: "POST", body: JSON.stringify(body) })).json();
+    const j = await (await post(path, body)).json();
     if (j.state) render(j.state);
     if (!j.ok) throw j.error;
     return j;
@@ -804,9 +837,10 @@ function fitPreview() {
 }
 new ResizeObserver(fitPreview).observe($("stage"));
 FIELDS.forEach(f => { $(f).addEventListener("input", schedule); $(f).addEventListener("change", schedule); });
-$("file").onchange = () => {
+$("file").onchange = async () => {
   const f = $("file").files[0]; if (!f) return;
-  const rd = new FileReader(); rd.onload = () => { imageData = rd.result; schedule(); }; rd.readAsDataURL(f);
+  try { imageData = await readImage(f); } catch (e) { setMsgKey("m_preview_err", { e: String(e) }, "err"); return; }
+  schedule();
 };
 $("printBtn").onclick = doPrint;
 
@@ -821,7 +855,7 @@ async function openCalib() {
   calMsg("");
   $("calibDlg").showModal();
   try {
-    const r = await fetch("/api/preview", { method: "POST", body: JSON.stringify({ kind: "calibrate", width_mm: w, height_mm: h }) });
+    const r = await post("/api/preview", { kind: "calibrate", width_mm: w, height_mm: h });
     if (r.ok) { const u = URL.createObjectURL(await r.blob()); $("calImg").onload = () => URL.revokeObjectURL(u); $("calImg").src = u; }
   } catch (e) {}
 }

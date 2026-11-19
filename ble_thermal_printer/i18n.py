@@ -33,6 +33,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "h_host": "HTTP host",
         "h_no_browser": "don't open a browser",
         "h_no_autoconnect": "don't connect to the printer on startup",
+        "h_allowed_host": ("extra host name accepted in the Host header (repeatable; e.g. printer.local); "
+                           "'*' accepts any"),
         "h_calibrate": "print an alignment test label (mm rulers + edge lines)",
         "h_text": "text label",
         "h_text_arg": "text; use \\n for line breaks",
@@ -85,6 +87,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "no": "no",
         "ready": "ready",
         "serve_url": "ble-thermal-printer web interface: {url}  (Ctrl+C to stop)",
+        "serve_exposed": ("Warning: listening on a network address. The web interface has no login yet; "
+                          "anyone who can reach this port can print and change settings."),
         # printer status codes
         "s_cover_open": "cover open",
         "s_paper_out": "out of paper",
@@ -125,6 +129,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "h_host": "HTTP adresi",
         "h_no_browser": "tarayıcı açma",
         "h_no_autoconnect": "açılışta yazıcıya bağlanma",
+        "h_allowed_host": ("Host başlığında kabul edilecek ek ad (tekrarlanabilir; örn. printer.local); "
+                           "'*' hepsini kabul eder"),
         "h_calibrate": "hizalama test etiketi bas (mm cetveli + kenar çizgileri)",
         "h_text": "metin etiketi",
         "h_text_arg": "metin; satır sonu için \\n",
@@ -176,6 +182,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "no": "hayır",
         "ready": "hazır",
         "serve_url": "ble-thermal-printer web arayüzü: {url}  (durdurmak için Ctrl+C)",
+        "serve_exposed": ("Uyarı: ağ adresinde dinleniyor. Web arayüzünde henüz giriş yok; "
+                          "bu porta erişebilen herkes baskı alabilir ve ayarları değiştirebilir."),
         "s_cover_open": "kapak açık",
         "s_paper_out": "kağıt yok",
         "s_overheated": "aşırı ısınma",

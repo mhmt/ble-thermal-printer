@@ -41,6 +41,17 @@ python3 -m venv .venv
 
 The last printer is stored in `~/.config/ble-thermal-printer/config.json` and connected automatically on startup (disable with `--no-autoconnect`).
 
+### Security
+
+The web interface has **no login yet** and listens on `127.0.0.1` by default. These protections are always on:
+
+- **Host allow-list:** requests are served only when the `Host` header is `localhost`, `127.0.0.1`, `::1` or the address passed to `--host`. With `--host 0.0.0.0`, the machine's host name, `<hostname>.local` and its IP addresses are also accepted. Add other names with `--allowed-host printer.example` (repeatable) or the `allowed_hosts` config key. `--allowed-host '*'` turns the check off. This check blocks DNS-rebinding attacks.
+- **No cross-site requests:** POST requests must send `Content-Type: application/json`. When a browser sends `Origin` or `Sec-Fetch-Site`, they must match this page. Another website open in your browser therefore cannot print or change settings.
+- **Input limits:** request bodies are limited to 8 MB and images to 30 megapixels (PNG, JPEG, GIF, BMP, WebP). Every field is type- and range-checked (label size 10–60 × 5–200 mm, at most 99 copies, at most 1000 characters of text, …). The web interface downsizes large photos before uploading them.
+- Responses send a strict Content-Security-Policy and anti-framing headers. Idle connections time out after 30 s.
+
+If you start the server with `--host 0.0.0.0`, anyone who can reach the port can print. Only do this on a network you trust.
+
 ## Command line
 
 ```bash
@@ -91,6 +102,9 @@ Settings live in `~/.config/ble-thermal-printer/config.json` (or `$XDG_CONFIG_HO
 | `auto_reconnect` | Reconnect automatically when the connection drops (toggle in the connection panel). |
 | `last_address`, `last_name` | Printer to connect to on startup; set after a successful connection. |
 | `trims` | Alignment calibration per label size, set in the **Alignment** dialog. |
+| `allowed_hosts` | Extra host names accepted by the web server (same as `--allowed-host`). |
+
+Set `BLE_THERMAL_PRINTER_CONFIG=/path/to/config.json` to use a different file, for example for a system service.
 
 ## Protocol
 
@@ -116,9 +130,12 @@ The protocol details come from the Eleph implementation in [TiMini-Print](https:
 | `ble_thermal_printer/render.py` | Text / QR / barcode / image → 1-bit label bitmap |
 | `ble_thermal_printer/manager.py` | Persistent connection, state machine, auto-reconnect |
 | `ble_thermal_printer/server.py`, `ble_thermal_printer/web.html` | Web interface |
+| `ble_thermal_printer/httpguard.py` | Host allow-list, cross-site and body-size checks for the web server |
+| `ble_thermal_printer/schema.py` | Validation of label requests received over HTTP |
 | `ble_thermal_printer/cli.py`, `ble_thermal_printer/i18n.py` | Command line and its messages |
 | `ble_thermal_printer/config.py` | Saved settings (last printer, calibration) |
 | `tools/probe.py` | Raw BLE discovery and protocol probe |
+| `tests/` | Server tests without a printer: `python -m unittest discover -s tests` |
 
 ## License
 

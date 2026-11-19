@@ -126,6 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--printer", help=t("h_printer"))
     s.add_argument("--no-browser", action="store_true", help=t("h_no_browser"))
     s.add_argument("--no-autoconnect", action="store_true", help=t("h_no_autoconnect"))
+    s.add_argument("--allowed-host", action="append", default=[], metavar="NAME", help=t("h_allowed_host"))
 
     s = sub.add_parser("calibrate", help=t("h_calibrate"))
     add_common(s)
@@ -188,7 +189,7 @@ def main(argv=None) -> None:
         elif args.cmd == "serve":
             from .server import serve
             serve(args.host, args.port, args.printer, open_browser=not args.no_browser,
-                  autoconnect=not args.no_autoconnect)
+                  autoconnect=not args.no_autoconnect, allowed_hosts=args.allowed_host)
         else:
             img, label = build_image(args)
             if args.preview:
