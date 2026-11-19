@@ -106,6 +106,28 @@ async def cmd_info(args) -> None:
             print(f"{k.ljust(width)} : {v}")
 
 
+def cmd_token(args) -> None:
+    import time
+    from . import tokens
+
+    if args.token_cmd == "create":
+        tok, secret = tokens.create(args.name, args.scope, args.daily_labels, args.rate)
+        print(t("token_created", name=tok.name, id=tok.id, scope=tok.scope))
+        print(secret)
+    elif args.token_cmd == "list":
+        rows = tokens.list_tokens()
+        if not rows:
+            print(t("token_none"))
+            return
+        print(t("token_header"))
+        for k in rows:
+            print(f"{k.id:<9} {k.name:<20} {k.scope:<7} {k.daily_labels or '-':>10}  {k.rate_per_min:>7}  "
+                  f"{time.strftime('%Y-%m-%d', time.localtime(k.created))}")
+    elif args.token_cmd == "revoke":
+        tok = tokens.revoke(args.token)
+        print(t("token_revoked", name=tok.name, id=tok.id))
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="ble-thermal-printer", description=t("description"), epilog=t("epilog"),
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -127,6 +149,18 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-browser", action="store_true", help=t("h_no_browser"))
     s.add_argument("--no-autoconnect", action="store_true", help=t("h_no_autoconnect"))
     s.add_argument("--allowed-host", action="append", default=[], metavar="NAME", help=t("h_allowed_host"))
+    s.add_argument("--public-host", action="append", default=[], metavar="NAME", help=t("h_public_host"))
+
+    s = sub.add_parser("token", help=t("h_token"))
+    ts = s.add_subparsers(dest="token_cmd", required=True)
+    c = ts.add_parser("create", help=t("h_token_create"))
+    c.add_argument("name", help=t("h_token_name"))
+    c.add_argument("--scope", choices=["print", "read"], default="print", help=t("h_scope"))
+    c.add_argument("--daily-labels", type=int, default=200, help=t("h_daily_labels"))
+    c.add_argument("--rate", type=int, default=30, help=t("h_rate"))
+    ts.add_parser("list", help=t("h_token_list"))
+    r = ts.add_parser("revoke", help=t("h_token_revoke"))
+    r.add_argument("token", help=t("h_token_id"))
 
     s = sub.add_parser("calibrate", help=t("h_calibrate"))
     add_common(s)
@@ -189,7 +223,10 @@ def main(argv=None) -> None:
         elif args.cmd == "serve":
             from .server import serve
             serve(args.host, args.port, args.printer, open_browser=not args.no_browser,
-                  autoconnect=not args.no_autoconnect, allowed_hosts=args.allowed_host)
+                  autoconnect=not args.no_autoconnect, allowed_hosts=args.allowed_host,
+                  public_hosts=args.public_host)
+        elif args.cmd == "token":
+            cmd_token(args)
         else:
             img, label = build_image(args)
             if args.preview:

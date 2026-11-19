@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 
 from PIL import Image
 
-from . import config, httpguard, render, schema
+from . import api, config, httpguard, render, schema
 from .i18n import t
 from .manager import ConnectionManager, err_info
 
@@ -26,18 +26,15 @@ SOCKET_TIMEOUT = 30  # seconds; a slow or idle client can't hold a handler threa
 
 
 def compose_from_json(req) -> tuple[Image.Image, render.Label, schema.LabelRequest]:
-    lr = schema.label_request(req)
-    if lr.kind == "calibrate":
-        img, label = render.render_calibration(lr.width_mm, lr.height_mm)
-        return img, label, lr
-    top, bottom = config.get_trim(lr.width_mm, lr.height_mm)
-    img, label = render.compose(lr.kind, width_mm=lr.width_mm, height_mm=lr.height_mm,
-                                trim_top_mm=top, trim_bottom_mm=bottom, **lr.compose_kwargs)
-    return img, label, lr
+    return api.compose_label(req, max_copies=schema.COPIES[1])
 
 
-def make_handler(mgr: ConnectionManager, hosts: set[str] | frozenset[str] | None = frozenset(httpguard.LOOPBACK)):
-    """hosts: accepted Host header names (see httpguard.allowed_hosts); None accepts any."""
+def make_handler(mgr: ConnectionManager, hosts: set[str] | frozenset[str] | None = frozenset(httpguard.LOOPBACK),
+                 public_hosts: set[str] | frozenset[str] = frozenset()):
+    """hosts: accepted Host header names (see httpguard.allowed_hosts); None accepts any.
+    public_hosts: names under which the server is reachable from the internet; only /api/v1 is served there.
+    """
+    api_v1 = api.ApiV1(mgr)
     def full_state() -> dict:
         return {**mgr.snapshot(), "trims": config.all_trims(), "default_size": config.get_label_size()}
 
@@ -70,36 +67,59 @@ def make_handler(mgr: ConnectionManager, hosts: set[str] | frozenset[str] | None
             self.close_connection = True  # the unread body (if any) must not be parsed as a request
             self._json({"ok": False, "error": {"code": r.code, "params": {}, "text": str(r)}}, r.status)
 
-        def _body(self):
+        def _raw_body(self) -> bytes:
             n = httpguard.body_length(self.headers)
             raw = self.rfile.read(n) if n else b""
             if len(raw) != n:
                 raise httpguard.Rejected(400, "bad_request", "Incomplete request body")
+            return raw
+
+        def _body(self):
+            return httpguard.parse_json(self._raw_body())
+
+        def _is_public(self) -> bool:
+            """Requests from the internet (Tailscale Funnel or a --public-host name) may only use /api/v1."""
+            return (httpguard.split_host(self.headers.get("Host") or "") in public_hosts
+                    or self.headers.get("Tailscale-Funnel-Request") is not None)
+
+        def _handle(self, method: str) -> None:
+            path = urlsplit(self.path).path
             try:
-                return json.loads(raw or b"{}")
-            except (UnicodeDecodeError, ValueError):
-                raise httpguard.Rejected(400, "bad_json", "Request body is not valid JSON") from None
+                httpguard.check(method, self.headers, hosts)
+            except httpguard.Rejected as r:
+                log.warning("Rejected request (%s %s): %s", method, path, r)
+                return self._reject(r)
+            if path.startswith(api.PREFIX):
+                rep = api_v1.handle(method, path, self.headers, self._raw_body)
+                if method == "POST" and rep.status >= 400:
+                    self.close_connection = True  # the body may not have been read
+                return self._send(rep.status, rep.body, rep.ctype, rep.headers)
+            if self._is_public():
+                self.close_connection = True
+                return self._send(404, b"not found", "text/plain")
+            if method == "GET":
+                return self._ui_get(path)
+            try:
+                req = self._body()
+            except httpguard.Rejected as r:
+                log.warning("Rejected request (%s): %s", path, r)
+                return self._reject(r)
+            self._ui_post(path, req)
 
         def do_GET(self):
-            try:
-                httpguard.check("GET", self.headers, hosts)
-            except httpguard.Rejected as r:
-                return self._reject(r)
-            path = urlsplit(self.path).path
+            self._handle("GET")
+
+        def do_POST(self):
+            self._handle("POST")
+
+        def _ui_get(self, path: str) -> None:
             if path in ("/", "/index.html"):
                 return self._send(200, page(), "text/html; charset=utf-8")
             if path == "/api/state":
                 return self._json(full_state())
             self._send(404, b"not found", "text/plain")
 
-        def do_POST(self):
-            path = urlsplit(self.path).path
-            try:
-                httpguard.check("POST", self.headers, hosts)
-                req = self._body()
-            except httpguard.Rejected as r:
-                log.warning("Rejected request (%s): %s", path, r)
-                return self._reject(r)
+        def _ui_post(self, path: str, req) -> None:
             try:
                 if path == "/api/connect":
                     mgr.run(mgr.connect(schema.connect_address(req)), 60)
@@ -140,20 +160,27 @@ def make_handler(mgr: ConnectionManager, hosts: set[str] | frozenset[str] | None
     return Handler
 
 
+def _cfg_list(cfg: dict, key: str) -> list[str]:
+    v = cfg.get(key) or []
+    return [v] if isinstance(v, str) else [str(x) for x in v]
+
+
 def serve(host: str = "127.0.0.1", port: int = 8765, target: str | None = None, open_browser=True,
-          autoconnect: bool = True, allowed_hosts: list[str] | tuple[str, ...] = ()) -> None:
+          autoconnect: bool = True, allowed_hosts: list[str] | tuple[str, ...] = (),
+          public_hosts: list[str] | tuple[str, ...] = ()) -> None:
     logging.getLogger("ble_thermal_printer").setLevel(logging.INFO)
-    cfg_hosts = config.load().get("allowed_hosts") or []
-    if isinstance(cfg_hosts, str):
-        cfg_hosts = [cfg_hosts]
-    hosts = httpguard.allowed_hosts(host, [*map(str, cfg_hosts), *allowed_hosts])
+    cfg = config.load()
+    public = {httpguard.split_host(h) for h in [*_cfg_list(cfg, "public_hosts"), *public_hosts] if h.strip()}
+    hosts = httpguard.allowed_hosts(host, [*_cfg_list(cfg, "allowed_hosts"), *allowed_hosts, *public])
     mgr = ConnectionManager(target, autoconnect=autoconnect)
-    httpd = ThreadingHTTPServer((host, port), make_handler(mgr, hosts))
+    httpd = ThreadingHTTPServer((host, port), make_handler(mgr, hosts, frozenset(public)))
     url = f"http://{'127.0.0.1' if host in httpguard.WILDCARD else host}:{port}/"
     print(t("serve_url", url=url), flush=True)
     if not httpguard.is_loopback(host):
         print(t("serve_exposed"), flush=True)
     log.info("Allowed Host names: %s", "any" if hosts is None else ", ".join(sorted(hosts)))
+    if public:
+        log.info("Public Host names (API only): %s", ", ".join(sorted(public)))
     if open_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:

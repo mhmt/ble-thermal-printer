@@ -481,6 +481,7 @@ function eventText(ev) {
     case "connect_failed": case "print_failed": return t("ev_" + ev.code, { error: errText(p.error) });
     case "printer_warning": return t("ev_printer_warning", { list: statusList(p.errors) });
     case "auto_reconnect": return t(p.on ? "ev_auto_on" : "ev_auto_off");
+    case "printed": return t("ev_printed", p) + (p.source ? ` · ${p.source}` : "");
     default: return ("ev_" + ev.code) in I18N.en ? t("ev_" + ev.code, p) : ev.code;
   }
 }

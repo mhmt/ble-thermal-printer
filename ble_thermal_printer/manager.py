@@ -247,9 +247,13 @@ class ConnectionManager:
         return self.snapshot()["devices"]
 
     # --- printing ------------------------------------------------------------
-    async def print(self, img, w_mm: float, h_mm: float, density, copies) -> None:
+    async def print(self, img, w_mm: float, h_mm: float, density, copies, *,
+                    connect: bool = True, source: str | None = None) -> None:
+        """connect=False fails fast with `not_connected` instead of connecting first (API calls)."""
         async with self.op:
             if not (self.printer and self.printer.is_connected):
+                if not connect:
+                    raise PrinterError("not_connected", "Printer is not connected")
                 self._set(want_connected=True)
                 await self._connect_locked(None, manual=True)
             p = self.printer
@@ -260,7 +264,7 @@ class ConnectionManager:
             self._set(phase="printing", progress={"done": 0, "total": 0})
             try:
                 await p.print_image(img, w_mm, h_mm, density=density, copies=copies, progress=prog)
-                self._event("printed", copies=copies, w=w_mm, h=h_mm)
+                self._event("printed", copies=copies, w=w_mm, h=h_mm, source=source)
             except Exception as e:
                 self._event("print_failed", "error", error=err_info(e))
                 raise

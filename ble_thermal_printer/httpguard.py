@@ -10,6 +10,7 @@ Non-browser clients (curl, scripts) don't send Origin or Sec-Fetch-Site and only
 from __future__ import annotations
 
 import ipaddress
+import json
 import logging
 import socket
 from urllib.parse import urlsplit
@@ -102,6 +103,13 @@ def check(method: str, headers, hosts: set[str] | None) -> None:
     ctype = (headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
     if ctype != "application/json":
         raise Rejected(415, "bad_content_type", "Content-Type must be application/json")
+
+
+def parse_json(raw: bytes):
+    try:
+        return json.loads(raw or b"{}")
+    except (UnicodeDecodeError, ValueError):
+        raise Rejected(400, "bad_json", "Request body is not valid JSON") from None
 
 
 def body_length(headers) -> int:

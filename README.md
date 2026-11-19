@@ -9,6 +9,7 @@ Desktop client for the **MPIA P1** Bluetooth thermal label printer (and other pr
 - **Web interface** with a live preview: text, QR, barcode and image labels; label-size presets, rotation, border, inverted colors, density and copies.
 - **Connection management:** scan, pick a printer, connect or disconnect, and auto-reconnect when the printer is turned back on. Shows live status (cover open, out of paper, …) and an event log. It remembers the last printer.
 - **Command-line tool** for scripting and one-off prints.
+- **HTTP API** with tokens for scripts, Home Assistant and webhooks (`/api/v1`).
 - **Alignment calibration:** for each label size, a test label with mm rulers measures where the printer actually prints, and content is laid out in the printable area.
 - English UI and CLI by default, Turkish available.
 
@@ -51,6 +52,56 @@ The web interface has **no login yet** and listens on `127.0.0.1` by default. Th
 - Responses send a strict Content-Security-Policy and anti-framing headers. Idle connections time out after 30 s.
 
 If you start the server with `--host 0.0.0.0`, anyone who can reach the port can print. Only do this on a network you trust.
+
+## HTTP API
+
+The server also offers a token-protected API under `/api/v1`. Use it to print from scripts, Home Assistant or webhooks. It runs in the same process as the web interface, because the printer accepts only one Bluetooth connection.
+
+```bash
+ble-thermal-printer token create home-assistant      # prints the token once; copy it
+ble-thermal-printer token create dashboard --scope read
+ble-thermal-printer token list
+ble-thermal-printer token revoke home-assistant      # takes effect immediately
+```
+
+| Endpoint | Scope | |
+|---|---|---|
+| `GET /api/v1/status` | read | Printer state: `connected`, `ready`, `errors`, `name`, `label_size_mm` |
+| `POST /api/v1/preview` | read | Label JSON → PNG |
+| `POST /api/v1/print` | print | Label JSON → prints now |
+
+```bash
+curl -X POST http://printer.local:8765/api/v1/print \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: order-1042" \
+  -d '{"kind": "qr", "data": "https://example.com/o/1042", "caption": "#1042", "width_mm": 50, "height_mm": 16}'
+```
+
+**Label JSON** uses the same fields as the web interface. The fields are `kind` (`text`, `qr`, `barcode`, `image`), `text`, `data`, `caption`, `barcode_kind` and `image` (a `data:` URL), plus `width_mm`, `height_mm`, `margin_mm`, `rotate`, `border`, `invert`, `density` and `copies`. Missing sizes use `label_size` from the config. The calibrated trim is applied automatically.
+
+**Behavior**
+- **Printing is synchronous.** If the printer is not connected or not ready (for example the cover is open or it is out of paper), the call fails right away with `503` and the error code. The job is not queued. The server keeps reconnecting in the background as usual.
+- **`Idempotency-Key`** makes retries safe. Repeating a key with the same body returns the first successful result without printing again; the response has the `Idempotent-Replayed: true` header. Reusing a key with a different body returns `422`. A failed request does not keep its key, so you can retry with the same key.
+- **Limits per token:** 30 requests per minute (`--rate`) and 200 labels per day (`--daily-labels`, `0` means no limit). At most 10 copies per request. When a limit is hit, the call returns `429`; the rate limit also sends `Retry-After`. Counters live in memory and reset when the server restarts.
+- **Errors** have the form `{"ok": false, "error": {"code", "params", "text"}}`. The status codes are `400` (invalid field), `401` (no or wrong token), `403` (scope), `404`/`405`, `413` (body over 8 MB), `415` (not JSON), `422`, `429` and `503` (printer unavailable).
+- **Token storage:** only a SHA-256 hash of each token is stored in the config file, which is written with mode `600`.
+
+**Home Assistant** example (`configuration.yaml`; put the token in `secrets.yaml` as `Bearer btp_…`):
+
+```yaml
+rest_command:
+  print_label:
+    url: http://127.0.0.1:8765/api/v1/print
+    method: POST
+    headers:
+      Authorization: !secret label_printer_token
+    content_type: application/json
+    payload: '{"kind": "text", "text": {{ text | tojson }}}'
+```
+
+### Access from the internet
+
+Only expose the API, never the web interface. With [Tailscale Funnel](https://tailscale.com/kb/1223/funnel), for example `tailscale funnel 8765`, start the server with `--public-host <machine>.<tailnet>.ts.net` (or set `public_hosts` in the config). Requests under that host name, and any request carrying Funnel's `Tailscale-Funnel-Request` header, can reach `/api/v1` only; everything else returns `404`. The web interface stays available on the local network.
 
 ## Command line
 
@@ -103,6 +154,8 @@ Settings live in `~/.config/ble-thermal-printer/config.json` (or `$XDG_CONFIG_HO
 | `last_address`, `last_name` | Printer to connect to on startup; set after a successful connection. |
 | `trims` | Alignment calibration per label size, set in the **Alignment** dialog. |
 | `allowed_hosts` | Extra host names accepted by the web server (same as `--allowed-host`). |
+| `public_hosts` | Host names that reach the server from the internet; only `/api/v1` is served there (same as `--public-host`). |
+| `api_tokens` | API tokens (hashes and limits), managed with `ble-thermal-printer token`. |
 
 Set `BLE_THERMAL_PRINTER_CONFIG=/path/to/config.json` to use a different file, for example for a system service.
 
@@ -132,6 +185,7 @@ The protocol details come from the Eleph implementation in [TiMini-Print](https:
 | `ble_thermal_printer/server.py`, `ble_thermal_printer/web.html` | Web interface |
 | `ble_thermal_printer/httpguard.py` | Host allow-list, cross-site and body-size checks for the web server |
 | `ble_thermal_printer/schema.py` | Validation of label requests received over HTTP |
+| `ble_thermal_printer/api.py`, `ble_thermal_printer/tokens.py` | `/api/v1` endpoints, token store, limits, idempotency |
 | `ble_thermal_printer/cli.py`, `ble_thermal_printer/i18n.py` | Command line and its messages |
 | `ble_thermal_printer/config.py` | Saved settings (last printer, calibration) |
 | `tools/probe.py` | Raw BLE discovery and protocol probe |

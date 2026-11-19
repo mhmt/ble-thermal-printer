@@ -25,11 +25,19 @@ def load() -> dict:
 
 
 def save(cfg: dict) -> None:
+    """Write atomically (readers never see a half-written file), readable by the owner only:
+    the file holds API token hashes."""
+    tmp = CONFIG_PATH.with_name(CONFIG_PATH.name + ".tmp")
     try:
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG_PATH.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(cfg, indent=2, ensure_ascii=False))
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, CONFIG_PATH)
     except Exception as e:
         log.warning("Could not save config: %s", e)
+        tmp.unlink(missing_ok=True)
 
 
 def get_label_size(cfg: dict | None = None) -> tuple[float, float]:

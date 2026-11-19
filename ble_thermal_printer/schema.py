@@ -10,6 +10,7 @@ import base64
 import binascii
 import io
 import math
+import warnings
 from dataclasses import dataclass, field
 
 from PIL import Image
@@ -117,14 +118,19 @@ def decode_image(data_url) -> Image.Image:
         raw = base64.b64decode(data_url.split(",", 1)[1], validate=True)
     except (binascii.Error, ValueError):
         raise ValidationError("image", "not valid base64") from None
+    too_large = ValidationError("image", "image is too large", max_pixels=MAX_IMAGE_PIXELS)
     try:
-        img = Image.open(io.BytesIO(raw), formats=IMAGE_FORMATS)
-        w, h = img.size  # read from the header, before decoding the pixels
-        if w * h > MAX_IMAGE_PIXELS:
-            raise ValidationError("image", "image is too large", max_pixels=MAX_IMAGE_PIXELS)
-        img.load()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            img = Image.open(io.BytesIO(raw), formats=IMAGE_FORMATS)
+            w, h = img.size  # read from the header, before decoding the pixels
+            if w * h > MAX_IMAGE_PIXELS:
+                raise too_large
+            img.load()
     except ValidationError:
         raise
+    except (Image.DecompressionBombWarning, Image.DecompressionBombError):
+        raise too_large from None
     except Exception:
         raise ValidationError("image", "not a supported image (PNG, JPEG, GIF, BMP, WebP)") from None
     return img
